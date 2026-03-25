@@ -77,9 +77,10 @@ image.png<!DOCTYPE html>
     (function () {
       // Node：登录、练习记录、教师布置/学生任务（Supabase）
       // 与 server/.env 里 PORT 一致（方案 B：3003，避免与占用 3000 的进程冲突）
-      const API_NODE = 'http://localhost:3003';
-      // Python：题库 docx、ASR+语法评测
-      const API_PYTHON = 'http://localhost:5001';
+      // Node：登录、练习记录、教师布置/学生任务（Express / Render）
+      const API_NODE = 'https://speaking-practice-1-4mkz.onrender.com';
+      // Python：题库 docx、ASR+语法评测（Flask / Render）
+      const API_PYTHON = 'https://speaking-practice-u2dw.onrender.com';
       const API_BASE = API_PYTHON;
 
       /** Interview 题库：优先加载与页面同目录的 practice-bank.cache.json（秒开），否则请求 Python */
