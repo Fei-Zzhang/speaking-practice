@@ -949,45 +949,96 @@ image.png<!DOCTYPE html>
             if (!PORTAL === 'student' && !name) { alert('请输入学号或用户名'); return; }
             if (API_NODE && !pwd) { alert('请输入密码'); return; }
             if (API_NODE) {
-              fetch(API_NODE + '/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  username: name,
-                  password: pwd,
-                  expectedRole: PORTAL === 'teacher' ? 'teacher' : 'student',
-                  teacherCode: teacherCode
-                })
-              }).then(function (r) {
-                return r.json().then(function (data) {
-                  if (data.ok) {
-                    setCurrentUser(data.username);
-                    setCurrentRole(data.role || (PORTAL === 'teacher' ? 'teacher' : 'student'));
-                    if (PORTAL === 'student') {
-                      state.view = 'list';
-                      persistSpeakingView('list');
-                    } else {
-                      state.view = 'hub';
-                      persistSpeakingView('hub');
-                    }
-                    render();
-                  } else { alert(data.message || ('HTTP ' + r.status + ' 请求失败')); }
-                }, function () { alert('HTTP ' + r.status + '：服务器返回异常，请检查 Node 后端与 Supabase 是否已建表'); });
-              }).catch(function () {
-                const ok = confirm('无法连接 Node 后端。\n\n请确认：\n1) cd server && npm start\n2) http://localhost:3003/api/health\n\n是否离线登录？');
-                if (ok) {
-                  setCurrentUser(name);
-                  setCurrentRole(PORTAL === 'teacher' ? 'teacher' : 'student');
-                  if (PORTAL === 'student') {
-                    state.view = 'list';
-                    persistSpeakingView('list');
-                  } else {
-                    state.view = 'hub';
-                    persistSpeakingView('hub');
-                  }
-                  render();
+              var btnLoginEl = document.getElementById('btnLogin');
+              var oldBtnText = btnLoginEl ? btnLoginEl.textContent : '';
+              if (btnLoginEl) {
+                btnLoginEl.disabled = true;
+                btnLoginEl.textContent = '正在连接后台…（如超时将自动重试）';
+              }
+
+              var attempts = 0;
+              var maxAttempts = 2;
+              var doAttempt = function () {
+                attempts += 1;
+
+                var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                var timeoutId = null;
+                if (controller) {
+                  timeoutId = setTimeout(function () {
+                    try { controller.abort(); } catch (_) {}
+                  }, 12000);
                 }
-              });
+
+                fetch(API_NODE + '/api/auth/login', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    username: name,
+                    password: pwd,
+                    expectedRole: PORTAL === 'teacher' ? 'teacher' : 'student',
+                    teacherCode: teacherCode
+                  }),
+                  signal: controller ? controller.signal : undefined
+                })
+                  .then(function (r) {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    return r.json().then(
+                      function (data) {
+                        if (data && data.ok) {
+                          setCurrentUser(data.username);
+                          setCurrentRole(data.role || (PORTAL === 'teacher' ? 'teacher' : 'student'));
+                          if (PORTAL === 'student') {
+                            state.view = 'list';
+                            persistSpeakingView('list');
+                          } else {
+                            state.view = 'hub';
+                            persistSpeakingView('hub');
+                          }
+                          render();
+                        } else {
+                          alert((data && data.message) || ('HTTP ' + r.status + ' 请求失败'));
+                        }
+                        if (btnLoginEl) {
+                          btnLoginEl.disabled = false;
+                          btnLoginEl.textContent = oldBtnText;
+                        }
+                      },
+                      function () {
+                        alert('HTTP ' + r.status + '：服务器返回异常，请检查 Node 后端与 Supabase 是否已建表');
+                        if (btnLoginEl) {
+                          btnLoginEl.disabled = false;
+                          btnLoginEl.textContent = oldBtnText;
+                        }
+                      }
+                    );
+                  })
+                  .catch(function () {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    if (attempts < maxAttempts) {
+                      setTimeout(doAttempt, 2500);
+                      return;
+                    }
+                    if (btnLoginEl) {
+                      btnLoginEl.disabled = false;
+                      btnLoginEl.textContent = oldBtnText;
+                    }
+                    const ok = confirm('无法连接 Node 后端。\n\nRender 免费实例可能正在休眠/唤醒，建议等待 20-60 秒后再登录一次。\n\n请确认：\n1) cd server && npm start\n2) http://localhost:3003/api/health\n\n是否离线登录？');
+                    if (ok) {
+                      setCurrentUser(name);
+                      setCurrentRole(PORTAL === 'teacher' ? 'teacher' : 'student');
+                      if (PORTAL === 'student') {
+                        state.view = 'list';
+                        persistSpeakingView('list');
+                      } else {
+                        state.view = 'hub';
+                        persistSpeakingView('hub');
+                      }
+                      render();
+                    }
+                  });
+              };
+
+              doAttempt();
               return;
             }
             setCurrentUser(name);
