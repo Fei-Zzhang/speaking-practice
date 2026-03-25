@@ -1,0 +1,42 @@
+.mcq-result {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mcq-score {
+  font-size: 1.1rem;
+  color: var(--text) !important;
+  margin-top: 0.5rem !important;
+}
+
+.result-item.correct {
+  border-left: 4px solid var(--correct);
+}
+
+.result-item.wrong {
+  border-left: 4px solid var(--wrong);
+}
+
+.result-question {
+  color: var(--text) !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.result-your {
+  color: var(--muted) !important;
+  font-size: 0.9rem !important;
+}
+
+.result-correct {
+  display: block;
+  color: var(--correct);
+  margin-top: 0.25rem;
+}
+
+.mcq-result-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+}

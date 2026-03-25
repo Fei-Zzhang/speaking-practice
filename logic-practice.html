@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>逻辑构建练习</title>
+  <style>
+    :root { --bg: #f5f5f7; --card: #fff; --border: #e0e0e5; --text: #1d1d1f; --muted: #6e6e73; --accent: #6366f1; --correct: #22c55e; --wrong: #ef4444; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: var(--text); min-height: 100vh; font-family: system-ui, "PingFang SC", sans-serif; }
+    #root { max-width: 640px; margin: 0 auto; padding: 1.5rem; }
+    .header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
+    .header a { color: var(--muted); text-decoration: none; }
+    .header a:hover { color: var(--text); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .card h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+    .card p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+    button, .btn { display: inline-block; font-family: inherit; cursor: pointer; border: none; border-radius: 10px; padding: 0.5rem 1rem; font-size: 0.9rem; background: var(--border); color: var(--text); text-decoration: none; }
+    button:hover, .btn:hover { background: #d0d0d5; }
+    .btn.primary { background: var(--accent); color: #fff; }
+    .btn.primary:hover { background: #818cf8; }
+    .btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .q-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .q-item { display: block; text-align: left; padding: 0.75rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-decoration: none; transition: border-color 0.2s; }
+    .q-item:hover { border-color: var(--accent); }
+    .q-item.locked { opacity: 0.6; pointer-events: none; }
+    .q-num { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.25rem; }
+    .sort-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 0.5rem; }
+    .sort-item .num { color: var(--muted); min-width: 1.5rem; }
+    .sort-item .move { display: flex; flex-direction: column; gap: 0; }
+    .sort-item button { padding: 0.2rem 0.5rem; font-size: 0.8rem; }
+    .connector-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+    .connector-pool { min-height: 44px; padding: 0.5rem; border-radius: 8px; transition: background 0.15s; }
+    .connector-pool.drag-over { background: rgba(99,102,241,0.12); }
+    .connector-chip { padding: 0.4rem 0.75rem; background: var(--accent); color: #fff; border-radius: 8px; cursor: grab; font-size: 0.9rem; }
+    .connector-chip:active { cursor: grabbing; }
+    .connector-slot { min-width: 120px; min-height: 40px; margin: 0.5rem 0; border: 2px dashed var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: var(--muted); }
+    .connector-slot.drag-over { border-color: var(--accent); background: rgba(99,102,241,0.1); }
+    .connector-slot.filled { border-style: solid; color: var(--text); }
+    .other-connector { margin-top: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+    .other-connector input { margin-left: 0.5rem; padding: 0.35rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; min-width: 160px; }
+    .result-ok { border-left: 4px solid var(--correct); }
+    .result-fail { border-left: 4px solid var(--wrong); }
+    .connectors { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.9rem; color: var(--muted); }
+    .sample-answer { margin-top: 0.5rem; padding: 0.75rem; background: var(--bg); border-radius: 8px; font-size: 0.9rem; white-space: pre-wrap; }
+    .level-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .level-tab { padding: 0.5rem 1rem; border-radius: 10px; background: var(--border); color: var(--text); text-decoration: none; }
+    .level-tab.active { background: var(--accent); color: #fff; }
+    .level-tab.locked { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+    .hint-box { margin-top: 0.5rem; padding: 0.75rem; background: var(--bg); border-radius: 8px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="logic-data.js"></script>
+  <script>
+    (function () {
+      var params = {};
+      (location.search || '').replace(/^\?/, '').split('&').forEach(function (p) {
+        var kv = p.split('=');
+        if (kv[0]) params[kv[0]] = decodeURIComponent(kv[1] || '');
+      });
+      var topic = params.topic || '';
+      var level = params.level || window.logicDailyLevel || 'beginner'; // beginner | intermediate | advanced
+      window.logicDailyLevel = level;
+
+      var dailyBeginner = typeof dailyBeginner !== 'undefined' ? dailyBeginner : (typeof dailyTopics !== 'undefined' ? dailyTopics : []);
+      var dailyIntermediate = typeof dailyIntermediate !== 'undefined' ? dailyIntermediate : [];
+      var dailyAdvanced = typeof dailyAdvanced !== 'undefined' ? dailyAdvanced : [];
+
+      function getDailyList() {
+        if (level === 'intermediate') return dailyIntermediate;
+        if (level === 'advanced') return dailyAdvanced;
+        return dailyBeginner;
+      }
+      function getDailyTitle() {
+        if (level === 'beginner') return '日常话题 · 初阶';
+        if (level === 'intermediate') return '日常话题 · 中阶';
+        if (level === 'advanced') return '日常话题 · 高阶';
+        return '日常话题';
+      }
+
+      function getStored(key, def) {
+        try {
+          var s = localStorage.getItem(key);
+          return s ? JSON.parse(s) : def;
+        } catch (_) { return def; }
+      }
+      function setStored(key, val) {
+        try { localStorage.setItem(key, JSON.stringify(val)); } catch (_) {}
+      }
+      function getBeginnerDone() {
+        var d = getStored('daily_beginner_done', []);
+        while (d.length < 20) d.push(false);
+        return d.slice(0, 20);
+      }
+      function setBeginnerDone(index, value) {
+        var d = getBeginnerDone();
+        d[index] = d[index] || value;
+        setStored('daily_beginner_done', d);
+      }
+      function isBeginner100() {
+        var d = getBeginnerDone();
+        return d.length >= 20 && d.every(function (x) { return x; });
+      }
+      function getIntermediateDone() {
+        var d = getStored('daily_intermediate_done', []);
+        while (d.length < 15) d.push(false);
+        return d.slice(0, 15);
+      }
+      function setIntermediateDone(index, value) {
+        var d = getIntermediateDone();
+        d[index] = d[index] || value;
+        setStored('daily_intermediate_done', d);
+      }
+      function isIntermediate100() {
+        var d = getIntermediateDone();
+        return d.length >= 15 && d.every(function (x) { return x; });
+      }
+
+      function shuffle(arr) {
+        var a = arr.slice();
+        for (var i = a.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var t = a[i]; a[i] = a[j]; a[j] = t;
+        }
+        return a;
+      }
+      function parseConnectors(str) {
+        if (!str) return [];
+        return str.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      }
+
+      function render() {
+        var root = document.getElementById('root');
+        var page = window.logicPage || 'list';
+        var index = window.logicIndex != null ? window.logicIndex : 0;
+
+        if (topic === 'daily') {
+          var list = getDailyList();
+          var title = getDailyTitle();
+          var beginnerUnlock = true;
+          var intermediateUnlock = isBeginner100();
+          var advancedUnlock = isIntermediate100();
+
+          if (page === 'level') {
+            root.innerHTML = '<div class="header"><a href="standalone.html">← 返回口语练习</a><h1 style="margin:0;font-size:1.2rem">日常话题逻辑构建</h1></div><div class="card"><p>选择阶段。初阶需完成句子排序与逻辑词填空；初阶正确率 100% 后解锁中阶，中阶 100% 后解锁高阶。</p></div><div class="level-tabs">' +
+            '<a class="level-tab active" href="logic-practice.html?topic=daily&level=beginner">初阶（20题）</a>' +
+            '<a class="level-tab' + (intermediateUnlock ? '' : ' locked') + '" href="' + (intermediateUnlock ? 'logic-practice.html?topic=daily&level=intermediate' : '#') + '">中阶（15题）' + (intermediateUnlock ? '' : ' · 需初阶100%') + '</a>' +
+            '<a class="level-tab' + (advancedUnlock ? '' : ' locked') + '" href="' + (advancedUnlock ? 'logic-practice.html?topic=daily&level=advanced' : '#') + '">高阶（15题）' + (advancedUnlock ? '' : ' · 需中阶100%') + '</a>' +
+            '</div>';
+            window.logicDailyLevel = 'beginner';
+            window.logicPage = 'list';
+            setTimeout(function() { render(); }, 0);
+            return;
+          }
+
+          if (page === 'list') {
+            var isBeginner = level === 'beginner';
+            var isIntermediate = level === 'intermediate';
+            var isAdvanced = level === 'advanced';
+            root.innerHTML = '<div class="header"><a href="logic-practice.html?topic=daily">← 选择阶段</a><h1 style="margin:0;font-size:1.2rem">' + title + '</h1></div><div class="card"><p>' +
+              (isBeginner ? '将每题的 4 个句子按逻辑顺序排列，并把逻辑词拖入句间正确位置。' : isIntermediate ? '根据核心观点、拓展原因、细节提示组织你的答案。' : '根据题目自由作答。') +
+              '</p></div><div class="q-list">' + list.map(function (q, i) {
+              return '<a class="q-item" href="#" data-i="' + i + '"><span class="q-num">第 ' + (i + 1) + ' 题</span>' + q.question + '</a>';
+            }).join('') + '</div>';
+            root.querySelectorAll('.q-item').forEach(function (el) {
+              el.onclick = function (e) {
+                e.preventDefault();
+                window.logicIndex = parseInt(el.dataset.i, 10);
+                window.logicPage = 'question';
+                if (list[0].options) window.logicOrder = shuffle([0, 1, 2, 3]);
+                window.logicConnectorSlots = [null, null, null];
+                render();
+              };
+            });
+            return;
+          }
+
+          var q = list[index];
+          if (q.options) {
+            renderBeginnerQuestion(root, list, index, q, getDailyTitle());
+            return;
+          }
+          if (q.coreHint) {
+            renderIntermediateQuestion(root, list, index, q, getDailyTitle());
+            return;
+          }
+          renderAdvancedQuestion(root, list, index, q, getDailyTitle());
+          return;
+        }
+
+        if (topic === 'complex') {
+          var list = typeof complexTopics !== 'undefined' ? complexTopics : [];
+          var title = '复杂话题逻辑构建';
+          if (!list.length) {
+            root.innerHTML = '<div class="header"><a href="standalone.html">← 返回</a></div><div class="card"><p>暂无数据。</p></div>';
+            return;
+          }
+          if (page === 'list') {
+            root.innerHTML = '<div class="header"><a href="standalone.html">← 返回口语练习</a><h1 style="margin:0;font-size:1.2rem">' + title + '</h1></div><div class="card"><p>将每道题的 4 个句子按逻辑顺序排列。</p></div><div class="q-list">' + list.map(function (q, i) {
+              return '<a class="q-item" href="#" data-i="' + i + '"><span class="q-num">第 ' + (i + 1) + ' 题</span>' + q.question + '</a>';
+            }).join('') + '</div>';
+            root.querySelectorAll('.q-item').forEach(function (el) {
+              el.onclick = function (e) {
+                e.preventDefault();
+                window.logicIndex = parseInt(el.dataset.i, 10);
+                window.logicPage = 'question';
+                window.logicOrder = shuffle([0, 1, 2, 3]);
+                render();
+              };
+            });
+            return;
+          }
+          var qc = list[index];
+          var order = window.logicOrder || [0, 1, 2, 3];
+          var submitted = window.logicSubmitted === true;
+          function move(idx, up) {
+            var next = up ? idx - 1 : idx + 1;
+            if (next < 0 || next >= 4) return;
+            var o = order.slice();
+            var t = o[idx]; o[idx] = o[next]; o[next] = t;
+            window.logicOrder = o;
+            render();
+          }
+          var correct = submitted && order.length === qc.correctOrder.length && order.every(function (v, i) { return v === qc.correctOrder[i]; });
+          var resultHtml = submitted ? '<div class="card ' + (correct ? 'result-ok' : 'result-fail') + '"><strong>' + (correct ? '正确' : '错误') + '</strong><p class="connectors">推荐连接词：' + qc.connectors + '</p></div>' : '';
+          root.innerHTML = '<div class="header"><a href="#">← 返回</a><h1 style="margin:0;font-size:1.2rem">' + title + ' · 第 ' + (index + 1) + ' 题</h1></div><div class="card"><p style="color:var(--text)">' + qc.question + '</p><p style="color:var(--muted);font-size:0.85rem">将下列句子按逻辑顺序排列：</p></div>' +
+            order.map(function (_, pos) {
+              var optIdx = order[pos];
+              return '<div class="sort-item" data-pos="' + pos + '"><span class="num">' + (pos + 1) + '.</span><span class="text">' + qc.options[optIdx] + '</span><span class="move">' + (pos > 0 ? '<button type="button" data-up="1">↑</button>' : '') + (pos < 3 ? '<button type="button" data-down="1">↓</button>' : '') + '</span></div>';
+            }).join('') + '<div class="card">' + (submitted ? '' : '<button type="button" class="btn primary" id="submitBtn">提交</button>') + '</div>' + resultHtml + (submitted ? '<div class="card"><button type="button" class="btn primary" id="nextBtn">下一题</button> <a href="#" id="listLink" class="btn">返回列表</a></div>' : '');
+          document.querySelector('#backLink') && (document.querySelector('#backLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; window.logicSubmitted = false; render(); });
+          if (!submitted) {
+            root.querySelectorAll('.sort-item button').forEach(function (btn) {
+              btn.onclick = function () {
+                var pos = parseInt(btn.closest('.sort-item').dataset.pos, 10);
+                move(pos, btn.dataset.up !== undefined);
+              };
+            });
+            document.getElementById('submitBtn').onclick = function () { window.logicSubmitted = true; render(); };
+          } else {
+            document.getElementById('nextBtn').onclick = function () { window.logicSubmitted = false; window.logicIndex = (index + 1) % list.length; window.logicOrder = shuffle([0, 1, 2, 3]); render(); };
+            document.getElementById('listLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; window.logicSubmitted = false; render(); };
+          }
+          return;
+        }
+
+        root.innerHTML = '<div class="header"><a href="standalone.html">← 返回口语练习</a></div><div class="card"><p>请从首页选择「日常话题逻辑构建」或「复杂话题逻辑构建」进入。</p><a href="standalone.html" class="btn primary">返回</a></div>';
+      }
+
+      var BEGINNER_CONNECTORS = ['because', 'for example'];
+
+      function renderBeginnerQuestion(root, list, index, q, title) {
+        var order = window.logicOrder || [0, 1, 2, 3];
+        var slots = window.logicConnectorSlots || [null, null, null];
+        var submitted = window.logicSubmitted === true;
+        var connectorArr = BEGINNER_CONNECTORS;
+        var correctBecauseSlot = q.correctBecauseSlot != null ? q.correctBecauseSlot : 0;
+        var correctForExampleSlot = q.correctForExampleSlot != null ? q.correctForExampleSlot : 2;
+        var otherRaw = window.logicOtherConnectorRaw || '';
+        var otherList = window.logicOtherConnectorList || [];
+        var orderCorrect = order.length === q.correctOrder.length && order.every(function (v, i) { return v === q.correctOrder[i]; });
+        var slotsCorrect = (slots[correctBecauseSlot] === 0 && slots[correctForExampleSlot] === 1);
+        var fullCorrect = submitted && orderCorrect && slotsCorrect;
+        var dispConn = [];
+        dispConn[correctBecauseSlot] = 'because';
+        dispConn[correctForExampleSlot] = 'for example';
+
+        function move(idx, up) {
+          var next = up ? idx - 1 : idx + 1;
+          if (next < 0 || next >= 4) return;
+          var o = order.slice();
+          var t = o[idx]; o[idx] = o[next]; o[next] = t;
+          window.logicOrder = o;
+          render();
+        }
+
+        var slotHtml = '';
+        if (!submitted) {
+          slotHtml = '<div class="card"><p style="color:var(--muted);font-size:0.85rem;margin-bottom:0.5rem">1. 用 ↑/↓ 调整句子顺序；2. 将 <strong>because</strong> 和 <strong>for example</strong> 拖入句间正确空位；3. 其余空位的连接词请在下方输入，系统不判分。</p>';
+          for (var si = 0; si < 4; si++) {
+            var optIdx = order[si];
+            slotHtml += '<div class="sort-item" data-pos="' + si + '"><span class="num">' + (si + 1) + '.</span><span class="text">' + q.options[optIdx] + '</span><span class="move">' + (si > 0 ? '<button type="button" data-up="1">↑</button>' : '') + (si < 3 ? '<button type="button" data-down="1">↓</button>' : '') + '</span></div>';
+            if (si < 3) {
+              var slotContent = slots[si];
+              var hasContent = slotContent === 0 || slotContent === 1;
+              slotHtml += '<div class="connector-slot ' + (hasContent ? 'filled' : '') + '" data-slot="' + si + '">' + (hasContent ? '<span class="connector-chip" data-connector-index="' + slotContent + '" draggable="true">' + connectorArr[slotContent] + '</span>' : '拖入 because / for example') + '</div>';
+            }
+          }
+          slotHtml += '<p style="margin-top:0.75rem;color:var(--muted);font-size:0.85rem">必选逻辑词（拖到上方空位）：</p><div class="connector-row connector-pool" id="connectorPool">';
+          for (var ci = 0; ci < 2; ci++) {
+            var inSlot = slots.indexOf(ci) !== -1;
+            if (!inSlot) slotHtml += '<span class="connector-chip" draggable="true" data-connector-index="' + ci + '">' + connectorArr[ci] + '</span>';
+          }
+          slotHtml += '</div><p class="other-connector">其他连接词（选填，可打字，多个用逗号分隔）：<input type="text" id="otherConnectorInput" placeholder="如 and, besides" /></p></div>';
+        } else {
+          var extraIdx = 0;
+          slotHtml = '<div class="card">' + order.map(function (_, pos) {
+            var optIdx = order[pos];
+            var connDisplay = '';
+            if (pos < 3) {
+              if (dispConn[pos]) {
+                connDisplay = ' <span style="color:var(--muted);font-size:0.9rem">→ ' + dispConn[pos] + ' →</span>';
+              } else if (otherList && otherList.length > 0 && extraIdx < otherList.length) {
+                connDisplay = ' <span style="color:var(--muted);font-size:0.9rem">→ ' + otherList[extraIdx] + ' →</span>';
+                extraIdx++;
+              }
+            }
+            return '<div class="sort-item" data-pos="' + pos + '"><span class="num">' + (pos + 1) + '.</span><span class="text">' + q.options[optIdx] + '</span>' + connDisplay + '</div>';
+          }).join('') + '</div>';
+        }
+
+        var resultHtml = submitted ? '<div class="card ' + (fullCorrect ? 'result-ok' : 'result-fail') + '"><strong>' + (fullCorrect ? '正确' : '错误') + '</strong>' + (!orderCorrect ? '<p>句子顺序有误</p>' : '') + (!slotsCorrect ? '<p>because 或 for example 位置有误</p>' : '') + '<p class="connectors">只考察 because 与 for example 的位置；其他连接词可自行填写。</p>' + (q.sampleAnswer ? '<p class="sample-answer">参考答案：' + q.sampleAnswer + '</p>' : '') + '</div>' : '';
+
+        root.innerHTML = '<div class="header"><a href="#" id="backLink">← 返回列表</a><h1 style="margin:0;font-size:1.2rem">' + title + ' · 第 ' + (index + 1) + ' 题</h1></div><div class="card"><p style="color:var(--text)">' + q.question + '</p><p style="color:var(--muted);font-size:0.85rem">1. 调整句子顺序；2. 将 because 和 for example 拖入正确空位；3. 其他连接词输入后会显示在剩余空隙中，但不计入正误。</p></div>' +
+          (submitted ? slotHtml : slotHtml) +
+          '<div class="card">' + (submitted ? '' : '<button type="button" class="btn primary" id="submitBtn">提交</button>') + '</div>' + resultHtml +
+          (submitted ? '<div class="card"><button type="button" class="btn primary" id="nextBtn">下一题</button> <a href="#" id="listLink" class="btn">返回列表</a></div>' : '');
+
+        document.getElementById('backLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; window.logicSubmitted = false; render(); };
+        if (!submitted) {
+          root.querySelectorAll('.sort-item button').forEach(function (btn) {
+            if (!btn.dataset.up && !btn.dataset.down) return;
+            var pos = parseInt(btn.closest('.sort-item').dataset.pos, 10);
+            btn.onclick = function () { move(pos, btn.dataset.up !== undefined); };
+          });
+          setupConnectorDrag(root, connectorArr, slots);
+          var input = document.getElementById('otherConnectorInput');
+          if (input) { input.value = otherRaw; }
+          document.getElementById('submitBtn').onclick = function () {
+            var raw = input && input.value ? input.value : '';
+            var parts = raw.split(',');
+            var list = [];
+            for (var i = 0; i < parts.length; i++) {
+              var t = parts[i].trim();
+              if (t) list.push(t);
+            }
+            window.logicOtherConnectorRaw = raw;
+            window.logicOtherConnectorList = list;
+            window.logicSubmitted = true;
+            if (orderCorrect && slotsCorrect) setBeginnerDone(index, true);
+            render();
+          };
+        } else {
+          if (fullCorrect) setBeginnerDone(index, true);
+          document.getElementById('nextBtn').onclick = function () { window.logicSubmitted = false; window.logicIndex = (index + 1) % list.length; window.logicOrder = shuffle([0, 1, 2, 3]); window.logicConnectorSlots = [null, null, null]; render(); };
+          document.getElementById('listLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; window.logicSubmitted = false; render(); };
+        }
+      }
+
+      function setupConnectorDrag(root, connectorArr, slots) {
+        function updateSlotsFromDOM() {
+          var s = [null, null, null];
+          root.querySelectorAll('.connector-slot[data-slot]').forEach(function (slot) {
+            var slotIdx = parseInt(slot.getAttribute('data-slot'), 10);
+            var chip = slot.querySelector('.connector-chip');
+            if (slotIdx >= 0 && slotIdx <= 2 && chip) s[slotIdx] = parseInt(chip.getAttribute('data-connector-index'), 10);
+          });
+          window.logicConnectorSlots = s;
+        }
+        root.querySelectorAll('.connector-chip').forEach(function (chip) {
+          chip.setAttribute('draggable', 'true');
+          chip.ondragstart = function (e) {
+            e.dataTransfer.setData('text/plain', chip.getAttribute('data-connector-index'));
+            e.dataTransfer.effectAllowed = 'move';
+          };
+        });
+        root.querySelectorAll('.connector-slot[data-slot]').forEach(function (slot) {
+          var slotIdx = parseInt(slot.getAttribute('data-slot'), 10);
+          if (isNaN(slotIdx)) return;
+          slot.ondragover = function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; slot.classList.add('drag-over'); };
+          slot.ondragleave = function () { slot.classList.remove('drag-over'); };
+          slot.ondrop = function (e) {
+            e.preventDefault();
+            slot.classList.remove('drag-over');
+            var idx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            if (isNaN(idx)) return;
+            var chip = root.querySelector('.connector-chip[data-connector-index="' + idx + '"]');
+            if (!chip) return;
+            var pool = document.getElementById('connectorPool');
+            var existing = slot.querySelector('.connector-chip');
+            if (existing && existing !== chip && pool) pool.appendChild(existing);
+            slot.innerHTML = '';
+            slot.appendChild(chip);
+            slot.classList.add('filled');
+            updateSlotsFromDOM();
+          };
+        });
+        var pool = document.getElementById('connectorPool');
+        if (pool) {
+          pool.ondragover = function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; pool.classList.add('drag-over'); };
+          pool.ondragleave = function () { pool.classList.remove('drag-over'); };
+          pool.ondrop = function (e) {
+            e.preventDefault();
+            pool.classList.remove('drag-over');
+            var idx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+            if (isNaN(idx)) return;
+            var chip = root.querySelector('.connector-chip[data-connector-index="' + idx + '"]');
+            if (!chip) return;
+            var fromSlot = chip.closest('.connector-slot[data-slot]');
+            if (fromSlot) {
+              fromSlot.innerHTML = '拖入连接词';
+              fromSlot.classList.remove('filled');
+              pool.appendChild(chip);
+              updateSlotsFromDOM();
+            }
+          };
+        }
+        updateSlotsFromDOM();
+      }
+
+      function renderIntermediateQuestion(root, list, index, q, title) {
+        root.innerHTML = '<div class="header"><a href="#" id="backLink">← 返回列表</a><h1 style="margin:0;font-size:1.2rem">' + title + ' · 第 ' + (index + 1) + ' 题</h1></div><div class="card"><p style="color:var(--text)">' + q.question + '</p><p style="color:var(--muted);font-size:0.85rem">参考以下提示组织你的答案：</p><div class="hint-box"><strong>核心观点：</strong>' + q.coreHint + '</div><div class="hint-box"><strong>拓展原因：</strong>' + q.reasonHint + '</div><div class="hint-box"><strong>细节/举例：</strong>' + q.detailHint + '</div></div><div class="card"><a href="#" class="btn primary" id="listLink">返回列表</a></div>';
+        document.getElementById('backLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; render(); };
+        document.getElementById('listLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; render(); };
+      }
+
+      function renderAdvancedQuestion(root, list, index, q, title) {
+        root.innerHTML = '<div class="header"><a href="#" id="backLink">← 返回列表</a><h1 style="margin:0;font-size:1.2rem">' + title + ' · 第 ' + (index + 1) + ' 题</h1></div><div class="card"><p style="color:var(--text);font-size:1.1rem">' + q.question + '</p><p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">自由作答，可口头或书写练习。</p></div><div class="card"><a href="#" class="btn primary" id="listLink">返回列表</a></div>';
+        document.getElementById('backLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; render(); };
+        document.getElementById('listLink').onclick = function (e) { e.preventDefault(); window.logicPage = 'list'; render(); };
+      }
+
+      if (topic === 'daily' && !params.level) {
+        window.logicPage = 'level';
+      }
+      render();
+    })();
+  </script>
+</body>
+</html>

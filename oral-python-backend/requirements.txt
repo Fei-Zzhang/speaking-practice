@@ -1,0 +1,13 @@
+flask>=3.0.0
+# 开发时热重载：与 app.py 中 reloader_type=watchdog 配合，保存代码后自动重启
+watchdog>=3.0.0
+requests>=2.28.0
+# Interview 题库：从 docx 解析 /api/practice-bank（import 名为 docx）
+python-docx>=1.1.0
+python-dotenv>=1.0.0
+websocket-client>=1.6.0
+# 可选：pip install pydub 且安装 ffmpeg 后，可自动将浏览器 webm 转为 wav 再评测
+pydub>=0.25.0
+# 腾讯云 ASR（一句话识别），与智聆配合返回真实口述 asrTranscript
+# 若 pip 报 hash 不匹配：pip install --no-cache-dir tencentcloud-sdk-python
+tencentcloud-sdk-python>=3.0.0

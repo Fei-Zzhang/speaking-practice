@@ -1,0 +1,15 @@
+.section-list-desc {
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.section-card .section-btn {
+  margin-top: 0.5rem;
+  align-self: flex-start;
+}

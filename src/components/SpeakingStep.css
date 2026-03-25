@@ -1,0 +1,108 @@
+.speaking-step {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.speaking-prompt {
+  color: var(--text) !important;
+  margin: 0.5rem 0 !important;
+}
+
+.speaking-tip {
+  font-size: 0.85rem;
+  color: var(--muted) !important;
+  margin: 0 !important;
+}
+
+.btn-start {
+  font-size: 1rem;
+  padding: 0.75rem 1.5rem;
+}
+
+.countdown-card {
+  text-align: center;
+  padding: 2rem !important;
+}
+
+.countdown-number {
+  font-size: 3rem;
+  font-weight: 700;
+  display: block;
+  line-height: 1.2;
+}
+
+.countdown-warn .countdown-number {
+  color: var(--warning);
+}
+
+.countdown-label {
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.countdown-done {
+  margin: 0.75rem 0 0 !important;
+  color: var(--warning);
+}
+
+.transcript-card,
+.edit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.transcript-label,
+.edit-card .transcript-label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.transcript-text {
+  min-height: 120px;
+  padding: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.edit-textarea {
+  width: 100%;
+  padding: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  resize: vertical;
+}
+
+.transcript-actions,
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.btn-edit {
+  background: var(--border);
+  color: var(--text);
+}
+
+.btn-edit:hover {
+  background: #3a3a44;
+}
+
+.edit-used {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.speaking-submit {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+}

@@ -1,0 +1,15 @@
+server:
+  port: 8080
+
+# 腾讯云口语评测（新版）：在控制台开通后，在「API 密钥管理」获取
+# 文档：https://cloud.tencent.com/document/product/1774/107497
+tencent:
+  app-id: ${TENCENT_APP_ID:}
+  secret-id: ${TENCENT_SECRET_ID:}
+  secret-key: ${TENCENT_SECRET_KEY:}
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB

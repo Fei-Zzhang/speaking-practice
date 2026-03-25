@@ -1,0 +1,14 @@
+//
+//  module.map.modulemap
+//  HuiYanOverseasSDK
+//
+//  Created by sunnydu on 2025/07/17.
+//  Copyright © 2025 tencent. All rights reserved.
+//
+
+framework module QCloudSOE {
+    umbrella header "QCloudSOE.h"
+
+    export *
+    module * { export * }
+}
