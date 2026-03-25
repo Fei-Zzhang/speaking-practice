@@ -901,7 +901,7 @@ image.png<!DOCTYPE html>
             ? '<label for="loginTeacherCode">教师注册口令（首次注册教师账号必填，在 server/.env 配置 TEACHER_REGISTER_SECRET）</label><input type="password" id="loginTeacherCode" placeholder="口令" autocomplete="off">'
             : '';
           var studentLoginNote = PORTAL === 'student'
-            ? '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">学生端使用<strong>统一账号</strong>登录；登录后在首页输入<strong>姓名</strong>即可查找教师布置给你的作业（姓名须与老师填写一致）。</p>'
+            ? ''
             : '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">入口：<code>?portal=student</code> 或 <code>?portal=teacher</code>；学生与教师账号不可混用入口。</p>';
           var nameField = PORTAL === 'student'
             ? '<label for="loginName">账号（固定）</label><input type="text" id="loginName" value="' + escapeHtml(STUDENT_PORTAL_USERNAME) + '" readonly style="opacity:0.9;cursor:not-allowed" autocomplete="username">'
@@ -915,11 +915,13 @@ image.png<!DOCTYPE html>
               ${nameField}
               <label for="loginPwd">密码</label>
               <input type="password" id="loginPwd" placeholder="${pwdPlaceholder}" autocomplete="current-password">
-              ${PORTAL === 'student' ? '<p style="color:var(--muted);font-size:0.82rem;margin:0.35rem 0 0">默认密码为 <code>45678</code>（与 <code>server/.env</code> 中 <code>STUDENT_PORTAL_PASSWORD</code> 一致；若管理员改过密码，以后者为准）。</p>' : ''}
+              ${PORTAL === 'teacher' ? '' : ''}
               ${teacherCodeRow}
               <button type="button" class="primary btn-login" id="btnLogin">登录</button>
               <button type="button" class="btn-login" id="btnOffline">离线登录（不连接后端）</button>
-              <p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">登录与任务走 Node 后端（${escapeHtml(API_NODE)}），评测走 Python（${escapeHtml(API_PYTHON)}）。</p>
+              ${PORTAL === 'teacher'
+                ? '<p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">登录与任务走 Node 后端（${escapeHtml(API_NODE)}），评测走 Python（${escapeHtml(API_PYTHON)}）。</p>'
+                : ''}
             </div>
           `;
           document.getElementById('btnOffline').onclick = function () {
