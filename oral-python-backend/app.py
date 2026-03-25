@@ -52,6 +52,7 @@ TENCENT_ASR_SECRET_KEY = os.environ.get("TENCENT_ASR_SECRET_KEY", "")
 TENCENT_ASR_REGION = os.environ.get("TENCENT_ASR_REGION", "ap-guangzhou")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
+OLLAMA_ENABLED = str(os.environ.get("OLLAMA_ENABLED", "1")).strip().lower() in ["1", "true", "yes", "on"]
 
 
 @app.route("/api/health", methods=["GET"])
@@ -95,6 +96,8 @@ def _extract_first_json_list(s: str):
 
 
 def _call_ollama_grammar_items(transcript: str):
+    if not OLLAMA_ENABLED:
+        return []
     prompt = f"""
 You are an English teacher for spoken English feedback.
 Only focus on grammar and word choice suitability (e.g., subject-verb agreement, noun singular/plural, article usage, verb tense, comparative forms, collocations).
@@ -216,6 +219,8 @@ def _call_ollama_grammar_pack(transcript: str):
       logic_chain: 学生展开的逻辑链条（按原顺序拆成若干步）
       connection_corrections: 句子衔接/连接词修正建议
     """
+    if not OLLAMA_ENABLED:
+        return [], transcript, [], [], [], []
     prompt = f"""
 You are an English teacher for spoken English feedback.
 The transcript below is ASR output and may contain:
@@ -440,6 +445,8 @@ Input transcript:
 def _call_ollama_logic_analysis(transcript: str):
     """二次轻量调用：抽象「逻辑链条」+ 中文「逻辑问题」诊断（观点重复/循环/展开不足等）。"""
     if not transcript or len(transcript.strip()) < 8:
+        return [], []
+    if not OLLAMA_ENABLED:
         return [], []
     prompt = f"""You analyze spoken English argument structure (IELTS-style free response).
 
