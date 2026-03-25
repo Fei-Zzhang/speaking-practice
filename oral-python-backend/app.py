@@ -1177,18 +1177,20 @@ def practice_bank():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
+    debug_mode = str(os.environ.get("DEBUG_MODE", "")).strip().lower() in ["1", "true", "yes", "on"]
     # 开发模式：保存 app.py 等源码后自动重启（比默认 stat 轮询更稳，尤其 macOS）
     _watch_files = []
     _env_path = os.path.join(_APP_DIR, ".env")
     if os.path.isfile(_env_path):
         _watch_files.append(_env_path)
-    _run_kw = dict(host="0.0.0.0", port=port, debug=True, use_reloader=True)
-    if _watch_files:
+    _run_kw = dict(host="0.0.0.0", port=port, debug=debug_mode, use_reloader=debug_mode)
+    if debug_mode and _watch_files:
         _run_kw["extra_files"] = _watch_files
     try:
-        import watchdog  # noqa: F401  # pip install watchdog
+        if debug_mode:
+            import watchdog  # noqa: F401  # pip install watchdog
 
-        _run_kw["reloader_type"] = "watchdog"
+            _run_kw["reloader_type"] = "watchdog"
     except ImportError:
         pass
     app.run(**_run_kw)
