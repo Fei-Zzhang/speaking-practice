@@ -1,0 +1,12 @@
+node_modules/
+**/node_modules/
+
+.venv/
+**/.venv/
+
+oral-python-backend/.venv/
+server/node_modules/
+oral-backend/node_modules/
+
+.env
+*.log
