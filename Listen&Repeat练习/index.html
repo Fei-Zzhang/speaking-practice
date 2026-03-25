@@ -1,0 +1,1844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Listen & Repeat - Listen & Repeat 练习</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 16px 48px;
+      background: #f6f7fb;
+      color: #222;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+
+    .group-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .group-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid #d4d4dd;
+      background: #ffffff;
+      cursor: pointer;
+      color: #4b5563;
+    }
+
+    .group-btn.active {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #ffffff;
+    }
+
+    .group-btn:hover:not(.active) {
+      background: #eef2ff;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .progress {
+      font-size: 14px;
+      font-weight: 500;
+      color: #444;
+    }
+
+    .btn {
+      border-radius: 999px;
+      border: 1px solid #d0d3e0;
+      background: #ffffff;
+      padding: 4px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #f3f4ff;
+    }
+
+    .btn-primary {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+
+    .btn[disabled] {
+      opacity: 0.45;
+      cursor: default;
+      background: #e5e7eb;
+      border-color: #e5e7eb;
+      color: #9ca3af;
+    }
+
+    .audio-wrapper {
+      background: #fff;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+      border: 1px solid #e2e4f0;
+    }
+
+    audio {
+      width: 100%;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 18px 20px 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+      border: 1px solid #e2e4f0;
+    }
+
+    .sentence-title {
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .sentence-plain {
+      font-size: 15px;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+
+    .sentence-hidden {
+      font-style: italic;
+      color: #9ca3af;
+    }
+
+    .user-input-wrap {
+      margin: 12px 0 16px;
+    }
+
+    .user-input-label {
+      display: block;
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+
+    .user-sentence-input {
+      width: 100%;
+      font-size: 15px;
+      line-height: 1.5;
+      padding: 10px 12px;
+      border: 1px solid #d0d3e0;
+      border-radius: 8px;
+      background: #f8fafc;
+      color: #222;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
+    .user-sentence-input:focus {
+      outline: none;
+      border-color: #2563eb;
+      background: #fff;
+    }
+
+    .sentence {
+      font-size: 16px;
+      line-height: 1.6;
+      margin: 10px 0 12px;
+    }
+
+    .blank-input {
+      width: 90px;
+      padding: 3px 4px;
+      margin: 0 2px;
+      border-radius: 6px;
+      border: 1px solid #d0d3e0;
+      font-size: 15px;
+    }
+
+    .blank-input.correct {
+      border-color: #16a34a;
+      background: #ecfdf3;
+    }
+
+    .blank-input.incorrect {
+      border-color: #dc2626;
+      background: #fef2f2;
+    }
+
+    .blank-input.shown-answer {
+      border-color: #6b7280;
+      background: #f3f4f6;
+      color: #374151;
+      cursor: pointer;
+    }
+    .oral-eval-wrap {
+      margin: 0 0 14px 0;
+      padding: 14px;
+      background: #f8fafc;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      font-size: 13px;
+      color: #4b5563;
+    }
+    .oral-eval-title {
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .oral-eval-btns {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .oral-eval-result {
+      margin-top: 6px;
+      font-size: 13px;
+      color: #64748b;
+      min-height: 1em;
+    }
+    .oral-score-line {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: #eff6ff;
+      border-radius: 8px;
+      border: 1px solid #bfdbfe;
+      font-size: 15px;
+      color: #1e40af;
+    }
+    .oral-score-line strong { font-weight: 700; }
+    .oral-detail-block {
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+    .oral-detail-block .detail-label {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    .oral-detail-block .detail-text {
+      font-size: 15px;
+      line-height: 1.55;
+      color: #111827;
+    }
+    .ref-line .word-weak {
+      background: linear-gradient(transparent 60%, #fecaca 60%);
+      border-bottom: 2px solid #ef4444;
+      padding: 0 1px;
+      cursor: help;
+    }
+    .weak-words {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .weak-word-tag {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      font-size: 13px;
+    }
+    .weak-word-tag .wk-score {
+      color: #b91c1c;
+      font-size: 12px;
+      margin-left: 4px;
+    }
+
+    .blank-input.shown-answer:hover {
+      background: #e5e7eb;
+      text-decoration: underline;
+    }
+
+    /* 展示答案后替换为可点击查词的 span（disabled input 不触发点击） */
+    span.word-link {
+      display: inline-block;
+      padding: 3px 4px;
+      margin: 0 2px;
+      border-radius: 6px;
+      border: 1px solid #6b7280;
+      background: #f3f4f6;
+      color: #374151;
+      cursor: pointer;
+      font-size: 15px;
+      font-family: inherit;
+    }
+
+    span.word-link:hover {
+      background: #e5e7eb;
+      text-decoration: underline;
+    }
+
+    .feedback {
+      font-size: 13px;
+      min-height: 18px;
+      margin-bottom: 8px;
+    }
+
+    .feedback.correct {
+      color: #16a34a;
+    }
+
+    .feedback.incorrect {
+      color: #dc2626;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    /* 暂停遮罩 */
+    .pause-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+
+    .pause-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px 28px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.18);
+      max-width: 320px;
+      text-align: center;
+    }
+
+    .pause-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .pause-text {
+      font-size: 14px;
+      color: #4b5563;
+      margin-bottom: 16px;
+    }
+
+    /* 结果页遮罩 */
+    .results-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .results-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px 28px 28px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.18);
+      max-width: 520px;
+      width: 100%;
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+
+    .results-title {
+      font-weight: 600;
+      font-size: 18px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    .results-stats {
+      font-size: 15px;
+      margin-bottom: 20px;
+      padding: 12px 16px;
+      background: #f0f9ff;
+      border-radius: 10px;
+      border: 1px solid #bae6fd;
+    }
+
+    .results-errors-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #444;
+      margin-bottom: 8px;
+    }
+
+    .results-errors-list {
+      font-size: 13px;
+      color: #4b5563;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .results-errors-list .error-item {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      background: #fef2f2;
+      border-radius: 8px;
+      border-left: 3px solid #dc2626;
+    }
+
+    .results-errors-list .error-item .error-meta {
+      font-size: 11px;
+      color: #6b7280;
+      margin-bottom: 2px;
+    }
+
+    .results-errors-list .error-item .error-reason-wrap {
+      margin-top: 8px;
+    }
+
+    .results-errors-list .error-item .error-reason-label {
+      font-size: 12px;
+      color: #6b7280;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .results-errors-list .error-item .error-reason-input,
+    .results-errors-list .error-item .error-note-input {
+      width: 100%;
+      font-size: 13px;
+      padding: 6px 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      resize: vertical;
+      min-height: 36px;
+      box-sizing: border-box;
+    }
+    .results-errors-list .error-item .error-note-wrap {
+      margin-top: 6px;
+    }
+    .results-errors-list .error-item .error-note-wrap .error-reason-label {
+      margin-bottom: 4px;
+    }
+
+    .results-save-wrap {
+      margin-bottom: 12px;
+    }
+
+    .results-summary-wrap {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .results-summary-title {
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #111;
+    }
+
+    .results-summary-table-wrap {
+      overflow-x: auto;
+      overflow-y: visible;
+      margin-bottom: 12px;
+      -webkit-overflow-scrolling: touch;
+      max-width: 100%;
+    }
+
+    .results-summary-table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
+      font-size: 13px;
+      table-layout: fixed;
+    }
+
+    .results-summary-table th,
+    .results-summary-table td {
+      border: 1px solid #e5e7eb;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .results-summary-table th {
+      background: #f3f4f6;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .results-summary-table tr:nth-child(even) td {
+      background: #fafafa;
+    }
+
+    .results-summary-table .col-sentence {
+      width: 38%;
+      min-width: 200px;
+      max-width: 420px;
+      word-break: break-word;
+    }
+    .results-summary-table .col-stats {
+      width: 12%;
+      min-width: 100px;
+      white-space: nowrap;
+    }
+    .results-summary-table .col-reason {
+      width: 20%;
+      min-width: 90px;
+      max-width: 140px;
+      word-break: break-word;
+    }
+    .results-summary-table .col-note {
+      width: 18%;
+      min-width: 80px;
+      max-width: 120px;
+      word-break: break-word;
+    }
+
+    .mode-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .mode-label { font-size: 14px; color: #444; }
+    .mode-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+    .notes-wrap { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb; }
+    .notes-label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+    .notes-input { width: 100%; font-size: 13px; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; resize: vertical; box-sizing: border-box; }
+
+    .per-sentence-analysis-wrap {
+      margin-top: 12px; padding: 10px 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e5e7eb;
+    }
+    .per-sentence-analysis-title { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
+    .per-sentence-analysis-label { display: block; font-size: 12px; color: #6b7280; margin-top: 6px; margin-bottom: 4px; }
+    .per-sentence-analysis-label:first-of-type { margin-top: 0; }
+    .per-sentence-analysis-input { width: 100%; font-size: 13px; padding: 6px 8px; border: 1px solid #e5e7eb; border-radius: 6px; resize: vertical; min-height: 32px; box-sizing: border-box; }
+
+    .exam-hint { font-size: 14px; color: #6b7280; margin-bottom: 12px; }
+    .exam-input-wrap { margin-bottom: 12px; }
+    #exam-timer-num { font-weight: 700; color: #dc2626; }
+    .exam-actions { margin-top: 8px; }
+    .exam-gap-wrap { margin: 16px 0; padding: 14px; background: #f0f9ff; border-radius: 10px; border: 1px solid #bae6fd; }
+    .exam-gap-text { margin: 0 0 10px 0; font-size: 14px; color: #0c4a6e; }
+    .site-nav-back { text-align: center; margin: 0 0 16px; font-size: 14px; }
+    .site-nav-back a { color: #4f46e5; text-decoration: none; }
+    .site-nav-back a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <p class="site-nav-back">
+    <a href="../standalone.html?portal=student" id="back-to-interview-site">← 返回口语练习主站（Interview）</a>
+  </p>
+  <script>
+    (function () {
+      try {
+        var q = new URLSearchParams(window.location.search || '');
+        var portal = q.get('portal') || 'student';
+        var a = document.getElementById('back-to-interview-site');
+        if (a) a.setAttribute('href', '../standalone.html?portal=' + encodeURIComponent(portal));
+      } catch (e) {}
+    })();
+  </script>
+  <h1>Listen & Repeat</h1>
+  <div class="mode-bar">
+    <span class="mode-label">模式：</span>
+    <button type="button" id="mode-practice" class="btn mode-btn active">练习模式</button>
+    <button type="button" id="mode-exam" class="btn mode-btn">考试模式</button>
+  </div>
+  <div class="subtitle" id="subtitle-practice">
+    选择句型 → 听整段音频（可重复播放）→ 跟读并录音评测 → 查看得分、转写与发音待加强词；每句结束后可填写本句备注
+  </div>
+  <div class="subtitle" id="subtitle-exam" style="display:none;">
+    选择句型 → 听整段音频 → 每句 20 秒输入（建议键盘输入，语音识别可能有误）→ 两句之间有间隔可重听音频；结束后按正确率计分、可分析错题并再听复述
+  </div>
+
+  <div class="audio-wrapper" id="audio-wrapper">
+    <div id="group-list" class="group-list"></div>
+    <div class="top-bar">
+      <div>
+        <div class="progress" id="progress-text">进度：1 / 10</div>
+        <div id="group-label" style="font-size:12px;color:#6b7280;margin-top:2px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="pause-toggle" class="btn">暂停练习</button>
+        <span style="font-size:12px;color:#6b7280;">使用下方进度条暂停 / 倒退</span>
+      </div>
+    </div>
+    <audio id="group-audio" controls>
+      您的浏览器不支持 audio 标签。
+    </audio>
+  </div>
+
+  <div class="card" id="practice-card">
+    <div class="sentence-title" id="sentence-title">第 1 句</div>
+    <div class="sentence-plain" id="plain-sentence">
+      先听上方音频，再点击下方跟读录音；评测完成后可查看得分、标准答案（标红为读音不标准）、以及你的答案。
+    </div>
+
+    <div class="oral-eval-wrap">
+      <div class="oral-eval-title">语音评测（智聆）</div>
+      <div class="oral-eval-btns">
+        <button type="button" id="oral-record-btn" class="btn btn-primary">开始录音</button>
+        <button type="button" id="oral-stop-btn" class="btn" disabled>停止并评分</button>
+      </div>
+      <div id="oral-eval-status" class="oral-eval-result"></div>
+      <div id="oral-score-row" class="oral-score-line" style="display:none;">
+        <strong>本句得分：</strong><span id="oral-score-value">—</span>
+      </div>
+      <div id="oral-ref-block" class="oral-detail-block" style="display:none;">
+        <div class="detail-label">标准答案（标红：读音不标准 &lt; 85 分）</div>
+        <div id="oral-ref-html" class="detail-text ref-line"></div>
+      </div>
+      <div id="oral-transcript-block" class="oral-detail-block" style="display:none;">
+        <div class="detail-label" id="oral-transcript-label">你的答案</div>
+        <p id="oral-transcript-hint" class="detail-hint" style="display:none;font-size:12px;color:#64748b;margin:0 0 8px;line-height:1.45;"></p>
+        <div id="oral-transcript-text" class="detail-text"></div>
+      </div>
+      <div id="oral-words-block" class="oral-detail-block" style="display:none;">
+        <div class="detail-label">读音不标准（需重点练）</div>
+        <div id="oral-weak-words" class="weak-words"></div>
+      </div>
+    </div>
+
+    <div class="sentence" id="sentence-container" style="display:none;"></div>
+
+    <div class="feedback" id="feedback"></div>
+
+    <div id="per-sentence-analysis-wrap" class="per-sentence-analysis-wrap" style="display:none;">
+      <div class="per-sentence-analysis-title">本句备注（选填）</div>
+      <label class="per-sentence-analysis-label">错误原因：</label>
+      <textarea id="per-sentence-reason" class="per-sentence-analysis-input" rows="1" placeholder="例如：某词重音、连读…"></textarea>
+      <label class="per-sentence-analysis-label">备注：</label>
+      <textarea id="per-sentence-note" class="per-sentence-analysis-input" rows="1" placeholder="本句备注…"></textarea>
+    </div>
+
+    <div class="actions">
+      <button id="next-btn" class="btn btn-primary" disabled>下一句 ▶</button>
+      <button id="redo-btn" class="btn" disabled>重录</button>
+    </div>
+    <p class="voice-hint" style="font-size:12px;color:#6b7280;margin-top:6px;">完成本句评测后可进入下一句；可点击标准答案中的单词查词（与旧版一致）。</p>
+  </div>
+
+  <!-- 考试模式：进行中 -->
+  <div class="card" id="exam-card" style="display:none;">
+    <div class="sentence-title" id="exam-sentence-title">第 1 句</div>
+    <p class="exam-hint" id="exam-hint">请先听上方整段音频（可重复播放），听完后点击「开始答题」。建议键盘输入，语音识别可能有误。</p>
+    <div class="exam-input-wrap" id="exam-input-wrap" style="display:none;">
+      <label class="user-input-label">输入你听到的句子（剩余 <span id="exam-timer-num">20</span> 秒，建议键盘输入）：</label>
+      <textarea id="exam-sentence-input" class="user-sentence-input" rows="2"></textarea>
+    </div>
+    <div class="exam-gap-wrap" id="exam-gap-wrap" style="display:none;">
+      <p class="exam-gap-text" id="exam-gap-text">下一句将在 <span id="exam-gap-num">5</span> 秒后开始，可点击下方重听整段音频。</p>
+      <button type="button" id="exam-replay-audio-btn" class="btn">重听本组音频</button>
+    </div>
+    <div class="feedback" id="exam-feedback"></div>
+    <div class="exam-actions">
+      <button type="button" id="exam-start-btn" class="btn btn-primary">开始答题</button>
+    </div>
+  </div>
+
+  <div class="pause-overlay" id="pause-overlay">
+    <div class="pause-box">
+      <div class="pause-title">练习已暂停</div>
+      <div class="pause-text">
+        音频已暂停。准备好了再继续练习。
+      </div>
+      <button id="resume-btn" class="btn btn-primary">继续练习</button>
+    </div>
+  </div>
+
+  <div class="results-overlay" id="results-overlay">
+    <div class="results-box">
+      <div class="results-title" id="results-title">本组练习结果</div>
+      <div class="results-stats" id="results-stats"></div>
+      <div class="results-errors-title" id="results-errors-title">总结本（本组所有句子）</div>
+      <div class="results-errors-list" id="results-errors-list"></div>
+      <div class="results-errors-title" id="results-analysis-title" style="display:none;">错题分析</div>
+      <p id="results-analysis-desc" style="display:none;font-size:12px;color:#6b7280;margin:-4px 0 8px 0;">在每条错题下方填写错误原因（选填），点击「保存数据」将错题与分析保存到本机。</p>
+      <div id="results-last-record" style="display:none;font-size:12px;color:#6b7280;margin-bottom:8px;"></div>
+      <div class="results-save-wrap" id="results-save-wrap" style="display:none;">
+        <label style="font-size:12px;color:#4b5563;">姓名：</label>
+        <input type="text" id="results-save-name" placeholder="填写姓名后保存" style="width:120px;margin-left:6px;margin-right:12px;padding:4px 8px;border-radius:6px;border:1px solid #d0d3e0;" />
+        <button type="button" id="results-save-btn" class="btn btn-primary">保存本次记录</button>
+        <span id="results-save-hint" style="font-size:12px;color:#16a34a;margin-left:8px;"></span>
+      </div>
+      <div class="results-summary-wrap" id="results-summary-wrap" style="display:none;">
+        <div class="results-summary-title">总结本（本组所有句子）</div>
+        <div id="results-summary-stats" class="results-stats" style="margin-bottom:12px;"></div>
+        <div class="results-summary-table-wrap">
+          <table class="results-summary-table" id="results-summary-table">
+            <thead>
+              <tr>
+                <th>分组</th>
+                <th>第几句</th>
+                <th>原句</th>
+                <th>听·答题次数</th>
+                <th class="col-note">备注</th>
+              </tr>
+            </thead>
+            <tbody id="results-summary-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <button id="results-close-btn" class="btn btn-primary" style="width:100%;">关闭并继续练习</button>
+    </div>
+  </div>
+
+  <!-- 考试结束弹窗：分数、错题分析、再听错题 -->
+  <div class="results-overlay" id="exam-result-overlay" style="display:none;">
+    <div class="results-box">
+      <div class="results-title" id="exam-result-title">考试结果</div>
+      <div class="results-stats" id="exam-result-stats"></div>
+      <div class="results-errors-title">错题与分析</div>
+      <div id="exam-result-errors" class="results-errors-list"></div>
+      <div class="results-save-wrap" style="margin-bottom:12px;">
+        <button type="button" id="exam-result-save-btn" class="btn btn-primary">保存错题分析</button>
+        <span id="exam-result-save-hint" style="font-size:12px;color:#16a34a;margin-left:8px;"></span>
+      </div>
+      <button type="button" id="exam-relisten-btn" class="btn" style="width:100%;margin-bottom:8px;">再听错题并复述</button>
+      <button type="button" id="exam-result-close-btn" class="btn btn-primary" style="width:100%;">关闭</button>
+    </div>
+  </div>
+
+  <script src="listen-repeat-bank.js"></script>
+  <script>
+    // 题库见 listen-repeat-bank.js（与教师端 Listen & Repeat 布置共用）
+    const groups = window.LISTEN_REPEAT_GROUPS;
+
+    /** 智聆 oral-eval（与 standalone 中 API_PYTHON 一致） */
+    var ORAL_API_BASE = 'http://localhost:5001';
+    /** Node 布置 / 提交作业（与 standalone 中 API_NODE 一致） */
+    var API_NODE_ASSIGN = 'http://localhost:3003';
+    var ASSIGNMENT_MODE = false;
+    var ASSIGNMENT_ID = null;
+    /** 作业虚拟组：id 用于统计 key，不与真实组 id 混用 */
+    var ASSIGNMENT_VIRTUAL_GROUP = null;
+    var ASSIGNMENT_QUESTION_IDS = [];
+    /** 每句对应题库分组 id（音频文件 {id}.mp3），多组布置时按句切换 */
+    var ASSIGNMENT_CATEGORY_IDS = [];
+
+    (function parseAssignmentQuery() {
+      try {
+        var q = new URLSearchParams(window.location.search || '');
+        if (q.get('assignmentMode') === '1' && q.get('assignmentId')) {
+          ASSIGNMENT_MODE = true;
+          ASSIGNMENT_ID = q.get('assignmentId');
+          var an = q.get('apiNode');
+          if (an) API_NODE_ASSIGN = an;
+          var ap = q.get('apiPython');
+          if (ap) ORAL_API_BASE = ap;
+        }
+      } catch (e) {}
+    })();
+
+    const groupListEl = document.getElementById('group-list');
+    const audioEl = document.getElementById('group-audio');
+    const progressText = document.getElementById('progress-text');
+    const groupLabelEl = document.getElementById('group-label');
+    const sentenceTitle = document.getElementById('sentence-title');
+    const plainSentence = document.getElementById('plain-sentence');
+    const sentenceContainer = document.getElementById('sentence-container');
+    const feedbackEl = document.getElementById('feedback');
+
+    const nextBtn = document.getElementById('next-btn');
+    const redoBtn = document.getElementById('redo-btn');
+    const pauseToggle = document.getElementById('pause-toggle');
+    const pauseOverlay = document.getElementById('pause-overlay');
+    const resumeBtn = document.getElementById('resume-btn');
+
+    let currentGroupIndex = 0;
+    let currentSentenceIndex = 0;
+    let hasPlayedSinceReset = false;
+    let wrongCountCurrentSentence = 0;
+    /** 错题本：本组练习中错满 3 次的句子 */
+    let errorBook = [];
+    /** 本组统计：已完成句数、正确通过句数（用于正确率） */
+    let groupSessionAttempted = 0;
+    let groupSessionCorrect = 0;
+
+    /** 每句统计：听音频次数、检查次数、出错检查次数（key: groupId#index，从 0 开始） */
+    let sentenceStats = {};
+    /** 每句错题分析：key groupId#index，value { reason, note } */
+    let sentenceAnalysis = {};
+    function ensureSentenceStats(groupId, idx) {
+      const key = groupId + '#' + idx;
+      if (!sentenceStats[key]) {
+        sentenceStats[key] = { listens: 0, checks: 0, wrongChecks: 0 };
+      }
+      return sentenceStats[key];
+    }
+
+    var PRON_WEAK_THRESHOLD = 85;
+    var oralEvalDone = false;
+    /** 本组内每句仅统计一次「已完成评测」（重录后清除该句 key 可再评） */
+    var oralEvalCountedKeys = {};
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function clearOralResultPanel() {
+      oralEvalDone = false;
+      var st = document.getElementById('oral-eval-status');
+      if (st) st.textContent = '';
+      var sr = document.getElementById('oral-score-row');
+      if (sr) sr.style.display = 'none';
+      var sv = document.getElementById('oral-score-value');
+      if (sv) sv.textContent = '—';
+      var rb = document.getElementById('oral-ref-block');
+      if (rb) rb.style.display = 'none';
+      var rh = document.getElementById('oral-ref-html');
+      if (rh) rh.innerHTML = '';
+      var tb = document.getElementById('oral-transcript-block');
+      if (tb) tb.style.display = 'none';
+      var tt = document.getElementById('oral-transcript-text');
+      if (tt) tt.textContent = '';
+      var tl = document.getElementById('oral-transcript-label');
+      if (tl) tl.textContent = '你的答案';
+      var th = document.getElementById('oral-transcript-hint');
+      if (th) {
+        th.style.display = 'none';
+        th.textContent = '';
+      }
+      var wb = document.getElementById('oral-words-block');
+      if (wb) wb.style.display = 'none';
+      var ww = document.getElementById('oral-weak-words');
+      if (ww) ww.innerHTML = '';
+    }
+
+    function parsePronDetailFromResponse(data) {
+      var rawStr = (data && (data.pronDetail || data.raw)) || '';
+      var detail = null;
+      if (typeof rawStr === 'string' && rawStr.trim()) {
+        try { detail = JSON.parse(rawStr); } catch (e) {}
+      }
+      if (!detail) {
+        return { overall: data && data.overall, transcript: '', weakList: [], words: [] };
+      }
+      var words = Array.isArray(detail.Words) ? detail.Words : [];
+      var asrWords = words
+        .filter(function (w) { var wd = (w.Word || '').trim(); return wd && wd !== '*'; })
+        .map(function (w) { return (w.Word || '').trim(); });
+      var transcript = asrWords.join(' ');
+      var weakList = words
+        .filter(function (w) {
+          var word = (w.ReferenceWord || w.Word || '').trim();
+          if (!word || word === '*') return false;
+          return typeof w.PronAccuracy === 'number' && w.PronAccuracy >= 0 && w.PronAccuracy < PRON_WEAK_THRESHOLD;
+        })
+        .map(function (w) {
+          var raw = (w.ReferenceWord || w.Word || '').trim();
+          var word = raw.replace(/_\d+$/, '');
+          return { word: word, score: Math.round(w.PronAccuracy) };
+        });
+      return { overall: data.overall, transcript: transcript, weakList: weakList, words: words, detail: detail };
+    }
+
+    function buildRefHtmlWithWeak(refSentence, weakList) {
+      var weakMap = {};
+      weakList.forEach(function (w) {
+        var k = w.word.toLowerCase().replace(/[^a-z0-9'-]/g, '');
+        if (k && weakMap[k] === undefined) weakMap[k] = w.score;
+      });
+      var parts = refSentence.split(/(\s+)/);
+      return parts
+        .map(function (part) {
+          if (!part.trim()) return escapeHtml(part);
+          var trimmed = part.trim();
+          var core = trimmed.replace(/[^A-Za-z0-9'-]/g, '');
+          var key = core.toLowerCase();
+          var esc = escapeHtml(trimmed);
+          if (weakMap[key] !== undefined) {
+            return '<span class="word-weak" title="发音约 ' + weakMap[key] + ' 分">' + esc + '</span>';
+          }
+          return '<span class="word-link" title="点击查词">' + esc + '</span>';
+        })
+        .join('');
+    }
+
+    function bindRefClickHandlers(container) {
+      if (!container) return;
+      container.querySelectorAll('.word-link, .word-weak').forEach(function (span) {
+        span.addEventListener('click', function () {
+          var w = (span.textContent || '').replace(/[.,!?]/g, '').trim();
+          if (w) window.open('https://dict.cn/search?q=' + encodeURIComponent(w), '_blank', 'noopener');
+        });
+      });
+    }
+
+    let appMode = 'practice'; // 'practice' | 'exam'
+    let examStarted = false;
+    let examSentenceIndex = 0;
+    let examTimerId = null;
+    let examResults = []; // { sentenceIndex, correct, userText, correctText }
+
+    // 渲染顶部的分组按钮
+    function renderGroupButtons() {
+      if (ASSIGNMENT_MODE) {
+        if (groupListEl) groupListEl.innerHTML = '';
+        return;
+      }
+      groupListEl.innerHTML = '';
+      groups.forEach(function(group, index) {
+        const btn = document.createElement('button');
+        btn.className = 'group-btn' + (index === currentGroupIndex ? ' active' : '');
+        btn.textContent = group.id;
+        btn.title = group.label;
+        btn.addEventListener('click', function() {
+          if (currentGroupIndex === index) return;
+          currentGroupIndex = index;
+          currentSentenceIndex = 0;
+          applyCurrentGroup();
+          renderGroupButtons();
+        });
+        groupListEl.appendChild(btn);
+      });
+    }
+
+    function getCurrentGroup() {
+      if (ASSIGNMENT_MODE && ASSIGNMENT_VIRTUAL_GROUP) return ASSIGNMENT_VIRTUAL_GROUP;
+      return groups[currentGroupIndex];
+    }
+
+    function updateProgress() {
+      const group = getCurrentGroup();
+      const total = group.sentences.length;
+      var prefix = ASSIGNMENT_MODE ? '作业进度：' : '进度：';
+      progressText.textContent = prefix + (currentSentenceIndex + 1) + ' / ' + total;
+      sentenceTitle.textContent = '第 ' + (currentSentenceIndex + 1) + ' 句';
+      groupLabelEl.textContent = group.label;
+    }
+
+    function resetSentenceView() {
+      plainSentence.textContent = '先听上方音频，再点击下方跟读录音；评测完成后可查看得分、标准答案（标红为读音不标准）、以及你的答案。';
+      clearOralResultPanel();
+      sentenceContainer.style.display = 'none';
+      sentenceContainer.innerHTML = '';
+      feedbackEl.textContent = '';
+      feedbackEl.className = 'feedback';
+      nextBtn.disabled = true;
+      redoBtn.disabled = false;
+      hasPlayedSinceReset = false;
+      wrongCountCurrentSentence = 0;
+      var analysisWrap = document.getElementById('per-sentence-analysis-wrap');
+      if (analysisWrap) analysisWrap.style.display = 'none';
+    }
+
+    function showPerSentenceAnalysis(reasonPrefill, notePrefill) {
+      var wrap = document.getElementById('per-sentence-analysis-wrap');
+      var reasonEl = document.getElementById('per-sentence-reason');
+      var noteEl = document.getElementById('per-sentence-note');
+      if (wrap) wrap.style.display = 'block';
+      if (reasonEl) reasonEl.value = reasonPrefill != null ? reasonPrefill : '';
+      if (noteEl) noteEl.value = notePrefill != null ? notePrefill : '';
+    }
+
+    function hidePerSentenceAnalysis() {
+      var wrap = document.getElementById('per-sentence-analysis-wrap');
+      if (wrap) wrap.style.display = 'none';
+    }
+
+    /** 将当前句加入错题本（整体口语分 < 60） */
+    function addCurrentToErrorBook() {
+      const group = getCurrentGroup();
+      const sentenceText = group.sentences[currentSentenceIndex];
+      errorBook.push({
+        groupId: group.id,
+        groupLabel: group.label,
+        sentenceIndex: currentSentenceIndex + 1,
+        sentenceText: sentenceText
+      });
+    }
+
+    /** 将句子规范为单词数组（小写、去标点、按空格分） */
+    function sentenceToWords(s) {
+      return (s || '').toLowerCase().trim().replace(/[.,!?]/g, '').split(/\s+/).filter(Boolean);
+    }
+
+    /** 标准答案中逐词（保留原文大小写用于错误原因展示） */
+    function getRefWordTokensOriginal(refSentence) {
+      var re = /\b[\w']+\b/g;
+      var m;
+      var out = [];
+      var s = refSentence || '';
+      while ((m = re.exec(s)) !== null) {
+        out.push({ display: m[0], norm: m[0].toLowerCase() });
+      }
+      return out;
+    }
+
+    /** ASR/口述转写转成小写词集合（与标准答案比对用） */
+    function asrWordsSetFromText(asrText) {
+      var words = (asrText || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[.,!?]/g, '')
+        .split(/\s+/)
+        .filter(Boolean);
+      return new Set(words);
+    }
+
+    /** 标准答案中有、但「你的答案」中缺失的词 → 「某词字段错误」 */
+    function compareRefToAsrMismatchReasons(refSentence, asrText) {
+      if (!asrText || !String(asrText).trim()) return [];
+      var tokens = getRefWordTokensOriginal(refSentence);
+      var asrSet = asrWordsSetFromText(asrText);
+      var reasons = [];
+      tokens.forEach(function (t) {
+        if (!asrSet.has(t.norm)) {
+          reasons.push(t.display + '字段错误');
+        }
+      });
+      return reasons;
+    }
+
+    /** 自动填充错误原因：内容不一致 + 读音不标准 */
+    function buildAutoReasonForOral(refSentence, asrLine, soeFallbackLine, weakList) {
+      var transcript = '';
+      if (asrLine && String(asrLine).trim()) transcript = String(asrLine).trim();
+      else if (soeFallbackLine && String(soeFallbackLine).trim()) transcript = String(soeFallbackLine).trim();
+      var contentReasons = transcript ? compareRefToAsrMismatchReasons(refSentence, transcript) : [];
+      var pronLines = (weakList || []).map(function (w) {
+        return w.word + '（' + w.score + ' 分）';
+      });
+      return contentReasons.concat(pronLines).join('\n');
+    }
+
+    redoBtn.addEventListener('click', function () {
+      clearOralResultPanel();
+      feedbackEl.textContent = '';
+      feedbackEl.className = 'feedback';
+      nextBtn.disabled = true;
+      wrongCountCurrentSentence = 0;
+    });
+
+    nextBtn.addEventListener('click', function() {
+      const group = getCurrentGroup();
+      const total = group.sentences.length;
+      var analysisWrap = document.getElementById('per-sentence-analysis-wrap');
+      var reasonEl = document.getElementById('per-sentence-reason');
+      var noteEl = document.getElementById('per-sentence-note');
+      if (analysisWrap && analysisWrap.style.display !== 'none') {
+        var key = group.id + '#' + currentSentenceIndex;
+        sentenceAnalysis[key] = {
+          reason: (reasonEl && reasonEl.value) ? reasonEl.value.trim() : '',
+          note: (noteEl && noteEl.value) ? noteEl.value.trim() : ''
+        };
+        hidePerSentenceAnalysis();
+      }
+      if (currentSentenceIndex < total - 1) {
+        var prevIdx = currentSentenceIndex;
+        currentSentenceIndex++;
+        if (ASSIGNMENT_MODE && ASSIGNMENT_CATEGORY_IDS && ASSIGNMENT_CATEGORY_IDS.length) {
+          var prevCid = ASSIGNMENT_CATEGORY_IDS[prevIdx];
+          var cidNext = ASSIGNMENT_CATEGORY_IDS[currentSentenceIndex];
+          // 同一套音频文件时不要改 src / load，否则会 currentTime 归零
+          if (cidNext && cidNext !== prevCid) {
+            audioEl.src = encodeURI(cidNext + '.mp3');
+            audioEl.load();
+          }
+        }
+        updateProgress();
+        resetSentenceView();
+      } else {
+        feedbackEl.textContent = '🎉 已完成本组所有句子！';
+        feedbackEl.className = 'feedback correct';
+        nextBtn.disabled = true;
+        showResultsModal();
+      }
+    });
+
+    pauseToggle.addEventListener('click', function() {
+      audioEl.pause();
+      pauseOverlay.style.display = 'flex';
+    });
+
+    resumeBtn.addEventListener('click', function() {
+      pauseOverlay.style.display = 'none';
+      audioEl.play().catch(function() {});
+    });
+
+    // 每次音频开始播放后，记录当前句子的听音频次数
+    audioEl.addEventListener('play', function() {
+      hasPlayedSinceReset = true;
+      redoBtn.disabled = false;
+      const group = getCurrentGroup();
+      ensureSentenceStats(group.id, currentSentenceIndex).listens++;
+    });
+
+    // 音频加载失败时提示（如文件不存在或路径错误）
+    audioEl.addEventListener('error', function() {
+      const group = getCurrentGroup();
+      feedbackEl.textContent = '无法加载音频：「' + group.id + '.mp3」。请确认该文件与 test.html 在同一目录下。';
+      feedbackEl.className = 'feedback incorrect';
+    });
+
+    // ---------- 考试模式 ----------
+    var EXAM_DURATION_SEC = 20;
+    var EXAM_GAP_SEC = 5;
+    var examTimerSec = 0;
+    var examGapIntervalId = null;
+
+    function startExamSentence() {
+      document.getElementById('exam-gap-wrap').style.display = 'none';
+      var group = getCurrentGroup();
+      var total = group.sentences.length;
+      if (examSentenceIndex >= total) {
+        showExamResultOverlay();
+        return;
+      }
+      document.getElementById('exam-sentence-title').textContent = '第 ' + (examSentenceIndex + 1) + ' 句';
+      document.getElementById('exam-sentence-input').value = '';
+      document.getElementById('exam-feedback').textContent = '';
+      document.getElementById('exam-input-wrap').style.display = 'block';
+      examTimerSec = EXAM_DURATION_SEC;
+      document.getElementById('exam-timer-num').textContent = examTimerSec;
+      if (examTimerId) clearInterval(examTimerId);
+      examTimerId = setInterval(function() {
+        examTimerSec--;
+        document.getElementById('exam-timer-num').textContent = examTimerSec > 0 ? examTimerSec : 0;
+        if (examTimerSec <= 0) {
+          clearInterval(examTimerId);
+          examTimerId = null;
+          submitExamSentence();
+        }
+      }, 1000);
+    }
+
+    function showExamGapThenNext() {
+      document.getElementById('exam-input-wrap').style.display = 'none';
+      var group = getCurrentGroup();
+      var total = group.sentences.length;
+      if (examSentenceIndex >= total) {
+        showExamResultOverlay();
+        return;
+      }
+      var gapSec = EXAM_GAP_SEC;
+      document.getElementById('exam-gap-num').textContent = gapSec;
+      document.getElementById('exam-gap-wrap').style.display = 'block';
+      if (examGapIntervalId) { clearInterval(examGapIntervalId); examGapIntervalId = null; }
+      examGapIntervalId = setInterval(function() {
+        gapSec--;
+        document.getElementById('exam-gap-num').textContent = gapSec > 0 ? gapSec : 0;
+        if (gapSec <= 0) {
+          clearInterval(examGapIntervalId);
+          examGapIntervalId = null;
+          startExamSentence();
+        }
+      }, 1000);
+    }
+
+    function submitExamSentence() {
+      document.getElementById('exam-input-wrap').style.display = 'none';
+      var group = getCurrentGroup();
+      var total = group.sentences.length;
+      var correctText = group.sentences[examSentenceIndex];
+      var userText = document.getElementById('exam-sentence-input').value.trim();
+      var correctWords = sentenceToWords(correctText);
+      var userWords = sentenceToWords(userText);
+      var wrong = false;
+      for (var i = 0; i < Math.max(correctWords.length, userWords.length); i++) {
+        if ((correctWords[i] || '') !== (userWords[i] || '')) { wrong = true; break; }
+      }
+      examResults.push({ sentenceIndex: examSentenceIndex + 1, correct: !wrong, userText: userText, correctText: correctText });
+      var examFeedbackEl = document.getElementById('exam-feedback');
+      if (!wrong) {
+        examFeedbackEl.textContent = '✓ 正确';
+        examFeedbackEl.className = 'feedback correct';
+      } else {
+        examFeedbackEl.textContent = '✗ 错误';
+        examFeedbackEl.className = 'feedback incorrect';
+      }
+      examSentenceIndex++;
+      if (examSentenceIndex >= total) {
+        setTimeout(showExamResultOverlay, 1200);
+      } else {
+        setTimeout(showExamGapThenNext, 1200);
+      }
+    }
+
+    function showExamResultOverlay() {
+      var total = examResults.length;
+      var correctCount = examResults.filter(function(r) { return r.correct; }).length;
+      var pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+      document.getElementById('exam-result-title').textContent = getCurrentGroup().label + ' - 考试结果';
+      document.getElementById('exam-result-stats').textContent = '正确率：' + correctCount + ' / ' + total + '（' + pct + '%）';
+      var wrongList = examResults.filter(function(r) { return !r.correct; });
+      var container = document.getElementById('exam-result-errors');
+      if (wrongList.length === 0) {
+        container.innerHTML = '<p style="color:#16a34a;margin:0;">全部正确！</p>';
+      } else {
+        container.innerHTML = wrongList.map(function(item, idx) {
+          return '<div class="error-item" data-exam-idx="' + idx + '">' +
+            '<div class="error-meta">' + getCurrentGroup().label + ' · 第 ' + item.sentenceIndex + ' 句</div>' +
+            '<div class="error-sentence">' + item.correctText.replace(/</g, '&lt;') + '</div>' +
+            '<label class="error-reason-label">错误原因（选填）：</label>' +
+            '<textarea class="error-reason-input exam-reason" data-sidx="' + item.sentenceIndex + '">' + '</textarea></div>';
+        }).join('');
+      }
+      document.getElementById('exam-result-save-hint').textContent = '';
+      document.getElementById('exam-result-overlay').style.display = 'flex';
+    }
+
+    document.getElementById('exam-start-btn').addEventListener('click', function() {
+      if (examStarted) return;
+      examStarted = true;
+      examSentenceIndex = 0;
+      examResults = [];
+      document.getElementById('exam-hint').style.display = 'none';
+      document.getElementById('exam-start-btn').style.display = 'none';
+      startExamSentence();
+    });
+
+    document.getElementById('exam-replay-audio-btn').addEventListener('click', function() {
+      audioEl.currentTime = 0;
+      audioEl.play().catch(function() {});
+    });
+
+    document.getElementById('exam-relisten-btn').addEventListener('click', function() {
+      audioEl.currentTime = 0;
+      audioEl.play().catch(function() {});
+    });
+
+    document.getElementById('exam-result-save-btn').addEventListener('click', function() {
+      var group = getCurrentGroup();
+      var reasonInputs = document.querySelectorAll('#exam-result-errors .exam-reason');
+      var wrongList = examResults.filter(function(r) { return !r.correct; });
+      var savedList = [];
+      try {
+        var raw = localStorage.getItem(ERROR_ANALYSIS_KEY);
+        if (raw) savedList = JSON.parse(raw);
+      } catch (e) {}
+      wrongList.forEach(function(item, idx) {
+        var ta = reasonInputs[idx];
+        var reason = ta ? ta.value.trim() : '';
+        var entry = { groupId: group.id, groupLabel: group.label, sentenceIndex: item.sentenceIndex, sentenceText: item.correctText, reason: reason };
+        var i = savedList.findIndex(function(s) { return s.groupId === entry.groupId && s.sentenceIndex === entry.sentenceIndex; });
+        if (i >= 0) savedList[i] = entry;
+        else savedList.push(entry);
+      });
+      try {
+        localStorage.setItem(ERROR_ANALYSIS_KEY, JSON.stringify(savedList));
+        document.getElementById('exam-result-save-hint').textContent = '已保存';
+      } catch (e) {
+        document.getElementById('exam-result-save-hint').textContent = '保存失败';
+      }
+    });
+
+    document.getElementById('exam-result-close-btn').addEventListener('click', function() {
+      document.getElementById('exam-result-overlay').style.display = 'none';
+    });
+
+    function applyCurrentGroup() {
+      var group = getCurrentGroup();
+      if (ASSIGNMENT_MODE && ASSIGNMENT_CATEGORY_IDS && ASSIGNMENT_CATEGORY_IDS.length) {
+        var _ac = ASSIGNMENT_CATEGORY_IDS[currentSentenceIndex] || ASSIGNMENT_CATEGORY_IDS[0];
+        audioEl.src = encodeURI(_ac + '.mp3');
+      } else {
+        audioEl.src = encodeURI(group.id + '.mp3');
+      }
+      audioEl.load();
+      if (!ASSIGNMENT_MODE) {
+        currentSentenceIndex = 0;
+      }
+      groupSessionAttempted = 0;
+      groupSessionCorrect = 0;
+      oralEvalCountedKeys = {};
+      examStarted = false;
+      examSentenceIndex = 0;
+      if (examTimerId) { clearInterval(examTimerId); examTimerId = null; }
+      if (examGapIntervalId) { clearInterval(examGapIntervalId); examGapIntervalId = null; }
+      updateProgress();
+      resetSentenceView();
+      if (appMode === 'practice') {
+        document.getElementById('audio-wrapper').style.display = 'block';
+        document.getElementById('practice-card').style.display = 'block';
+        document.getElementById('exam-card').style.display = 'none';
+      } else {
+        document.getElementById('audio-wrapper').style.display = 'block';
+        document.getElementById('practice-card').style.display = 'none';
+        document.getElementById('exam-card').style.display = 'block';
+        document.getElementById('exam-hint').style.display = 'block';
+        document.getElementById('exam-input-wrap').style.display = 'none';
+        document.getElementById('exam-gap-wrap').style.display = 'none';
+        document.getElementById('exam-start-btn').style.display = 'inline-block';
+        document.getElementById('exam-start-btn').textContent = '开始答题';
+        document.getElementById('exam-feedback').textContent = '';
+      }
+    }
+
+    document.getElementById('mode-practice').addEventListener('click', function() {
+      if (appMode === 'practice') return;
+      appMode = 'practice';
+      document.getElementById('mode-practice').classList.add('active');
+      document.getElementById('mode-exam').classList.remove('active');
+      document.getElementById('subtitle-practice').style.display = 'block';
+      document.getElementById('subtitle-exam').style.display = 'none';
+      applyCurrentGroup();
+    });
+    document.getElementById('mode-exam').addEventListener('click', function() {
+      if (appMode === 'exam') return;
+      appMode = 'exam';
+      document.getElementById('mode-exam').classList.add('active');
+      document.getElementById('mode-practice').classList.remove('active');
+      document.getElementById('subtitle-exam').style.display = 'block';
+      document.getElementById('subtitle-practice').style.display = 'none';
+      applyCurrentGroup();
+    });
+
+    var RECORDS_KEY = 'listenRepeat_records';
+    var ERROR_ANALYSIS_KEY = 'listenRepeat_errorAnalysis';
+
+    /** 本组练习结果弹窗：正确率 + 总结本（不预填上次内容），显示上一次记录日期与姓名 */
+    function showResultsModal() {
+      var group = getCurrentGroup();
+      var overlay = document.getElementById('results-overlay');
+      var titleEl = document.getElementById('results-title');
+      var statsEl = document.getElementById('results-stats');
+      var errorsListEl = document.getElementById('results-errors-list');
+      var analysisTitleEl = document.getElementById('results-analysis-title');
+      var analysisDescEl = document.getElementById('results-analysis-desc');
+      var saveWrapEl = document.getElementById('results-save-wrap');
+      var saveHintEl = document.getElementById('results-save-hint');
+
+      titleEl.textContent = group.label + ' - 练习结果';
+      var total = groupSessionAttempted;
+      var correct = groupSessionCorrect;
+      var pct = total > 0 ? Math.round((correct / total) * 100) : 0;
+      statsEl.textContent = '正确率：' + correct + ' / ' + total + '（' + pct + '%）';
+
+      var records = [];
+      try {
+        var raw = localStorage.getItem(RECORDS_KEY);
+        if (raw) records = JSON.parse(raw);
+      } catch (e) {}
+      var lastRecord = records.filter(function(r) { return r.groupId === group.id; }).pop();
+      var lastRecordEl = document.getElementById('results-last-record');
+      if (lastRecord && lastRecord.date && lastRecord.name) {
+        lastRecordEl.style.display = 'block';
+        var d = new Date(lastRecord.date);
+        var lastTotal = lastRecord.totalAttempted || 0;
+        var lastCorrect = lastRecord.totalCorrect || 0;
+        var lastPct = lastTotal > 0 ? Math.round((lastCorrect / lastTotal) * 100) : 0;
+        lastRecordEl.textContent = '上一次记录：' + (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')) + '　' + lastRecord.name + '　正确率 ' + lastCorrect + '/' + lastTotal + '（' + lastPct + '%）';
+      } else {
+        lastRecordEl.style.display = 'none';
+      }
+
+      document.getElementById('results-save-name').value = '';
+
+      errorsListEl.innerHTML = '';
+      errorsListEl.style.display = 'none';
+      if (document.getElementById('results-errors-title')) document.getElementById('results-errors-title').style.display = 'none';
+      analysisTitleEl.style.display = 'none';
+      analysisDescEl.style.display = 'none';
+      saveWrapEl.style.display = 'block';
+      saveHintEl.textContent = '';
+      document.getElementById('results-summary-wrap').style.display = 'none';
+
+      overlay.style.display = 'flex';
+    }
+
+    document.getElementById('results-close-btn').addEventListener('click', function() {
+      document.getElementById('results-overlay').style.display = 'none';
+    });
+
+    document.getElementById('results-save-btn').addEventListener('click', function() {
+      var nameInput = document.getElementById('results-save-name');
+      var name = (nameInput && nameInput.value) ? nameInput.value.trim() : '';
+      if (!name) {
+        document.getElementById('results-save-hint').textContent = '请先填写姓名';
+        return;
+      }
+      var group = getCurrentGroup();
+      var sentencesData = [];
+      for (var idx = 0; idx < group.sentences.length; idx++) {
+        var sentenceIndex = idx + 1;
+        var sentenceText = group.sentences[idx];
+        var statsKey = group.id + '#' + idx;
+        var stats = sentenceStats[statsKey] || { listens: 0, checks: 0, wrongChecks: 0 };
+        var analysisKey = group.id + '#' + idx;
+        var analysis = sentenceAnalysis[analysisKey] || { reason: '', note: '' };
+        sentencesData.push({
+          sentenceIndex: sentenceIndex,
+          sentenceText: sentenceText,
+          reason: (analysis.reason || '').trim(),
+          note: (analysis.note || '').trim(),
+          listens: stats.listens,
+          checks: stats.checks,
+          wrongChecks: stats.wrongChecks
+        });
+      }
+      var totalAtt = groupSessionAttempted;
+      var totalCor = groupSessionCorrect;
+      var record = {
+        date: new Date().toISOString(),
+        name: name,
+        groupId: group.id,
+        groupLabel: group.label,
+        totalAttempted: totalAtt,
+        totalCorrect: totalCor,
+        sentences: sentencesData
+      };
+      var records = [];
+      try {
+        var raw = localStorage.getItem(RECORDS_KEY);
+        if (raw) records = JSON.parse(raw);
+      } catch (e) {}
+      records.push(record);
+      records.sort(function(a, b) {
+        var na = (a.name || '').localeCompare(b.name || '', 'zh');
+        if (na !== 0) return na;
+        return (a.date || '').localeCompare(b.date || '');
+      });
+      try {
+        localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+        document.getElementById('results-save-hint').textContent = '已保存本次记录';
+      } catch (e) {
+        document.getElementById('results-save-hint').textContent = '保存失败';
+        return;
+      }
+      var total = groupSessionAttempted;
+      var correct = groupSessionCorrect;
+      var pct = total > 0 ? Math.round((correct / total) * 100) : 0;
+      document.getElementById('results-summary-stats').textContent = '正确率：' + correct + ' / ' + total + '（' + pct + '%）';
+      var summaryTitleEl = document.querySelector('.results-summary-title');
+      if (summaryTitleEl) {
+        var d = new Date(record.date);
+        var dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        summaryTitleEl.textContent = '本次已保存：' + dateStr + '　' + record.name;
+      }
+      var tbody = document.getElementById('results-summary-tbody');
+      tbody.innerHTML = record.sentences.map(function(s) {
+        var parts = [];
+        if (s.reason && s.reason.trim()) parts.push('原因：' + s.reason.trim());
+        if (s.note && s.note.trim()) parts.push('备注：' + s.note.trim());
+        var noteCell = parts.length ? parts.join('；').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') : '—';
+        var listenCheck = '听 ' + (s.listens || 0) + ' 次 · 检查 ' + (s.checks || 0) + ' 次';
+        return '<tr><td>' + record.groupLabel + '</td><td>第 ' + s.sentenceIndex + ' 句</td><td class="col-sentence">' + (s.sentenceText || '').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</td><td class="col-stats">' + listenCheck + '</td><td class="col-note">' + noteCell + '</td></tr>';
+      }).join('');
+      document.getElementById('results-summary-wrap').style.display = 'block';
+      document.getElementById('results-summary-wrap').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    // Listen & Repeat 语音评测（调用 /api/oral-eval 使用智聆）
+    var oralRecorder = null;
+    var oralStream = null;
+    var oralChunks = [];
+
+    function getPortalStudentName() {
+      try {
+        return (sessionStorage.getItem('speaking_student_display_name') || '').trim();
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function blobToBase64(blob) {
+      return new Promise(function (resolve, reject) {
+        var fr = new FileReader();
+        fr.onload = function () {
+          var s = fr.result;
+          var i = String(s).indexOf(',');
+          resolve(i >= 0 ? s.slice(i + 1) : s);
+        };
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+    }
+
+    /** 恢复上方听力音频进度（录音/评测/提交后部分浏览器会归零 currentTime） */
+    function restoreListeningAudioTime(tSec) {
+      if (tSec == null || !isFinite(tSec)) return;
+      function apply() {
+        try {
+          var d = audioEl.duration;
+          if (!d || isNaN(d) || d <= 0) return;
+          var maxT = Math.max(0, d - 0.05);
+          var target = Math.min(Math.max(0, tSec), maxT);
+          if (Math.abs((audioEl.currentTime || 0) - target) < 0.35) return;
+          audioEl.currentTime = target;
+        } catch (e) {}
+      }
+      requestAnimationFrame(apply);
+    }
+
+    /** 评测通过后向 Node 提交本句录音，供教师端查看 */
+    function submitAssignmentAudioToNode(blob, listenTimeSec) {
+      if (!ASSIGNMENT_MODE || !ASSIGNMENT_ID || !ASSIGNMENT_QUESTION_IDS.length) return;
+      var qid = ASSIGNMENT_QUESTION_IDS[currentSentenceIndex];
+      if (!qid) return;
+      var name = getPortalStudentName();
+      if (!name) return;
+      blobToBase64(blob)
+        .then(function (b64) {
+          return fetch(API_NODE_ASSIGN + '/api/student/submit-audio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: name,
+              assignmentId: ASSIGNMENT_ID,
+              questionId: qid,
+              audioB64: b64,
+              refText: getCurrentSentenceText() || '',
+            }),
+          });
+        })
+        .catch(function () {});
+    }
+
+    /** 作业参数无效或加载失败时：关闭作业模式并恢复为完整自由练习（与无参数打开一致） */
+    function fallbackToFreePractice(alertMessage) {
+      if (alertMessage) alert(alertMessage);
+      ASSIGNMENT_MODE = false;
+      ASSIGNMENT_ID = null;
+      ASSIGNMENT_VIRTUAL_GROUP = null;
+      ASSIGNMENT_QUESTION_IDS = [];
+      ASSIGNMENT_CATEGORY_IDS = [];
+      try {
+        var u = new URL(window.location.href);
+        u.searchParams.delete('assignmentMode');
+        u.searchParams.delete('assignmentId');
+        u.searchParams.delete('apiNode');
+        u.searchParams.delete('apiPython');
+        history.replaceState({}, '', u.pathname + (u.search || '') + (u.hash || ''));
+      } catch (e) {}
+      var h1 = document.querySelector('h1');
+      if (h1) h1.textContent = 'Listen & Repeat';
+      var modeBar = document.querySelector('.mode-bar');
+      if (modeBar) modeBar.style.display = '';
+      var subPr = document.getElementById('subtitle-practice');
+      if (subPr) {
+        subPr.style.display = 'block';
+        subPr.textContent =
+          '选择句型 → 听整段音频（可重复播放）→ 跟读并录音评测 → 查看得分、转写与发音待加强词；每句结束后可填写本句备注';
+      }
+      var subEx = document.getElementById('subtitle-exam');
+      if (subEx) subEx.style.display = 'none';
+      if (groupListEl) groupListEl.style.display = '';
+      var navA = document.querySelector('.site-nav-back a');
+      if (navA) {
+        navA.textContent = '← 返回口语练习主站（Interview）';
+        try {
+          var u2 = new URL(window.location.href);
+          var portal = u2.searchParams.get('portal') || 'student';
+          navA.setAttribute('href', '../standalone.html?portal=' + encodeURIComponent(portal));
+        } catch (e2) {
+          navA.setAttribute('href', '../standalone.html?portal=student');
+        }
+      }
+      renderGroupButtons();
+      applyCurrentGroup();
+    }
+
+    function initAssignmentMode() {
+      var h1 = document.querySelector('h1');
+      if (h1) h1.textContent = 'Listen & Repeat · 加载作业…';
+      var name = getPortalStudentName();
+      if (!name) {
+        fallbackToFreePractice(
+          '未检测到作业姓名。请先在口语练习主站输入姓名并确认，再从「我的作业」打开 Listen & Repeat 任务。\n\n已切换为自由练习模式。'
+        );
+        return;
+      }
+      fetch(
+        API_NODE_ASSIGN +
+          '/api/student/assignments/' +
+          encodeURIComponent(ASSIGNMENT_ID) +
+          '?username=' +
+          encodeURIComponent(name)
+      )
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (!data || !data.ok || !data.assignment) {
+            fallbackToFreePractice((data && data.message) || '加载作业失败');
+            return;
+          }
+          var asg = data.assignment;
+          var items = Array.isArray(asg.items) ? asg.items : [];
+          var lrItems = items.filter(function (it) {
+            return it.mode === 'listenRepeat';
+          });
+          if (!lrItems.length) {
+            fallbackToFreePractice('本作业不包含 Listen & Repeat 题目');
+            return;
+          }
+          ASSIGNMENT_VIRTUAL_GROUP = {
+            id: 'assign-' + ASSIGNMENT_ID,
+            label: (asg.title || '作业') + '（教师布置）',
+            sentences: lrItems.map(function (it) {
+              return it.refText || '';
+            }),
+          };
+          ASSIGNMENT_QUESTION_IDS = lrItems.map(function (it, idx) {
+            return it.questionId || 'q' + idx;
+          });
+          ASSIGNMENT_CATEGORY_IDS = lrItems.map(function (it) {
+            return it.categoryId || '';
+          });
+          for (var ci = 0; ci < ASSIGNMENT_CATEGORY_IDS.length; ci++) {
+            if (!ASSIGNMENT_CATEGORY_IDS[ci]) {
+              fallbackToFreePractice('作业数据缺少分组编号（categoryId），无法加载对应音频。');
+              return;
+            }
+          }
+          if (h1) h1.textContent = 'Listen & Repeat';
+          var modeBar = document.querySelector('.mode-bar');
+          if (modeBar) modeBar.style.display = 'none';
+          var subPr = document.getElementById('subtitle-practice');
+          if (subPr) {
+            subPr.style.display = 'block';
+            subPr.textContent =
+              '教师布置：仅本题范围内的句子；听对应组的整段音频 → 跟读评测 → 逐句完成。';
+          }
+          var subEx = document.getElementById('subtitle-exam');
+          if (subEx) subEx.style.display = 'none';
+          if (groupListEl) groupListEl.style.display = 'none';
+          var navA = document.querySelector('.site-nav-back a');
+          if (navA) {
+            navA.textContent = '← 返回我的作业';
+            try {
+              var u = new URL(window.location.href);
+              var portal = u.searchParams.get('portal') || 'student';
+              navA.setAttribute('href', '../standalone.html?portal=' + encodeURIComponent(portal));
+            } catch (e) {
+              navA.setAttribute('href', '../standalone.html?portal=student');
+            }
+          }
+          currentSentenceIndex = 0;
+          currentGroupIndex = 0;
+          applyCurrentGroup();
+        })
+        .catch(function () {
+          fallbackToFreePractice('无法连接作业服务器（' + API_NODE_ASSIGN + '）');
+        });
+    }
+
+    function getCurrentSentenceText() {
+      var group = getCurrentGroup();
+      return group && group.sentences && group.sentences[currentSentenceIndex] ? group.sentences[currentSentenceIndex] : '';
+    }
+
+    document.getElementById('oral-record-btn').addEventListener('click', function () {
+      var statusEl = document.getElementById('oral-eval-status');
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('当前浏览器不支持录音，请使用最新版 Chrome 或 Edge。');
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        oralStream = stream;
+        oralChunks = [];
+        try {
+          oralRecorder = new MediaRecorder(stream);
+        } catch (e) {
+          alert('无法创建录音器：' + e.message);
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          oralStream = null;
+          return;
+        }
+        oralRecorder.ondataavailable = function (e) {
+          if (e.data && e.data.size > 0) oralChunks.push(e.data);
+        };
+        oralRecorder.start();
+        statusEl.textContent = '正在录音，请跟读当前句子…';
+        document.getElementById('oral-record-btn').disabled = true;
+        document.getElementById('oral-stop-btn').disabled = false;
+      }).catch(function () {
+        alert('无法访问麦克风，请在浏览器地址栏允许本页面使用麦克风。');
+      });
+    });
+
+    document.getElementById('oral-stop-btn').addEventListener('click', function () {
+      var statusEl = document.getElementById('oral-eval-status');
+      if (!oralRecorder) return;
+      // 在停止录音前记下听力条进度，避免麦克风/后续请求导致播放位置被浏览器清零
+      var bookmarkListenSec = audioEl.currentTime;
+      try { oralRecorder.stop(); } catch (_) {}
+      document.getElementById('oral-record-btn').disabled = false;
+      document.getElementById('oral-stop-btn').disabled = true;
+
+      setTimeout(function () {
+        var blob = new Blob(oralChunks, { type: 'audio/webm' });
+        if (oralStream) {
+          try { oralStream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {}
+          oralStream = null;
+        }
+        if (blob.size === 0) {
+          restoreListeningAudioTime(bookmarkListenSec);
+          statusEl.textContent = '录音数据为空，请重试。';
+          return;
+        }
+        var fd = new FormData();
+        fd.append('audio', blob, 'listen-repeat.webm');
+        fd.append('refText', getCurrentSentenceText() || '');
+        fd.append('evalMode', '1'); // 句子模式
+        statusEl.textContent = '正在评测，请稍候…';
+        fetch(ORAL_API_BASE + '/api/oral-eval', {
+          method: 'POST',
+          body: fd
+        }).then(function (r) { return r.json().catch(function () { return {}; }); }).then(function (data) {
+          if (!data || data.ok === false) {
+            restoreListeningAudioTime(bookmarkListenSec);
+            statusEl.textContent = data && data.error ? data.error : '语音评测失败，请稍后重试。';
+            return;
+          }
+          var parsed = parsePronDetailFromResponse(data);
+          var refSentence = getCurrentSentenceText() || '';
+          var scoreNum = typeof parsed.overall === 'number' ? parsed.overall : (data.overall != null ? parseFloat(data.overall, 10) : NaN);
+          var scoreStr =
+            !isNaN(scoreNum) && typeof scoreNum.toFixed === 'function'
+              ? scoreNum.toFixed(1)
+              : data.overall != null
+                ? String(data.overall)
+                : '—';
+
+          statusEl.textContent = '评测完成。';
+          oralEvalDone = true;
+          document.getElementById('oral-score-row').style.display = 'block';
+          document.getElementById('oral-score-value').textContent = scoreStr;
+
+          document.getElementById('oral-ref-block').style.display = 'block';
+          var refHtml = buildRefHtmlWithWeak(refSentence, parsed.weakList || []);
+          document.getElementById('oral-ref-html').innerHTML = refHtml;
+          bindRefClickHandlers(document.getElementById('oral-ref-html'));
+
+          document.getElementById('oral-transcript-block').style.display = 'block';
+          var asrLine = data.asrTranscript && String(data.asrTranscript).trim();
+          var soeWordsLine = parsed.transcript && parsed.transcript.trim() ? parsed.transcript.trim() : '';
+          var hintEl = document.getElementById('oral-transcript-hint');
+          var labelEl = document.getElementById('oral-transcript-label');
+          if (asrLine) {
+            document.getElementById('oral-transcript-text').textContent = asrLine;
+            if (labelEl) labelEl.textContent = '你的答案';
+            if (hintEl) {
+              hintEl.style.display = 'none';
+              hintEl.textContent = '';
+            }
+          } else {
+            document.getElementById('oral-transcript-text').textContent =
+              soeWordsLine || '（无）';
+            if (labelEl) labelEl.textContent = '你的答案';
+            if (hintEl) {
+              hintEl.style.display = 'block';
+              var asrErr = data.asrError && String(data.asrError).trim();
+              if (asrErr) {
+                hintEl.innerHTML =
+                  '<strong>ASR 未返回真实口述：</strong>' +
+                  escapeHtml(asrErr) +
+                  '<br/><span style="color:#94a3b8">下方黑字为智聆按参考句对齐的词（非真实口述）。</span>';
+              } else {
+                hintEl.textContent =
+                  '说明：智聆 SOE 按参考句逐词打分，返回的 Words 拼起来会像整句原文。若要显示你实际说的内容，请在 oral-python-backend/.env 中配置 TENCENT_ASR_SECRET_ID 与 TENCENT_ASR_SECRET_KEY，并重启 Python 服务。';
+              }
+            }
+          }
+
+          var weakEl = document.getElementById('oral-weak-words');
+          weakEl.innerHTML = '';
+          if (parsed.weakList && parsed.weakList.length) {
+            document.getElementById('oral-words-block').style.display = 'block';
+            parsed.weakList.forEach(function (w) {
+              var span = document.createElement('span');
+              span.className = 'weak-word-tag';
+              span.innerHTML =
+                escapeHtml(w.word) + '<span class="wk-score">（' + w.score + ' 分）</span>';
+              weakEl.appendChild(span);
+            });
+          } else {
+            document.getElementById('oral-words-block').style.display = 'block';
+            weakEl.innerHTML = '<span style="color:#6b7280;font-size:13px;">无（各词得分均 ≥ ' + PRON_WEAK_THRESHOLD + '）</span>';
+          }
+
+          var group = getCurrentGroup();
+          var stats = ensureSentenceStats(group.id, currentSentenceIndex);
+          stats.checks++;
+
+          var countKey = group.id + '#' + currentSentenceIndex;
+          if (!oralEvalCountedKeys[countKey]) {
+            oralEvalCountedKeys[countKey] = true;
+            groupSessionAttempted++;
+            if (!isNaN(scoreNum) && scoreNum >= 75) {
+              groupSessionCorrect++;
+            }
+          }
+
+          if (!isNaN(scoreNum) && scoreNum >= 75) {
+            feedbackEl.textContent = '✅ 本句得分较好，可填写备注后进入下一句。';
+            feedbackEl.className = 'feedback correct';
+          } else if (!isNaN(scoreNum) && scoreNum < 60) {
+            addCurrentToErrorBook();
+            feedbackEl.textContent = '本句得分偏低，已加入错题提示；可重录或进入下一句。';
+            feedbackEl.className = 'feedback incorrect';
+          } else {
+            feedbackEl.textContent = '可填写备注后进入下一句，或点击「重录」。';
+            feedbackEl.className = 'feedback';
+          }
+
+          nextBtn.disabled = false;
+          var autoReason = buildAutoReasonForOral(
+            refSentence,
+            asrLine,
+            soeWordsLine,
+            parsed.weakList || []
+          );
+          showPerSentenceAnalysis(autoReason, '');
+          restoreListeningAudioTime(bookmarkListenSec);
+          submitAssignmentAudioToNode(blob, bookmarkListenSec);
+        }).catch(function () {
+          restoreListeningAudioTime(bookmarkListenSec);
+          statusEl.textContent = '无法连接语音评测后端，请确认本机后端已运行。';
+        });
+      }, 200);
+    });
+
+    // 初始化
+    if (ASSIGNMENT_MODE) {
+      initAssignmentMode();
+    } else {
+      renderGroupButtons();
+      applyCurrentGroup();
+    }
+  </script>
+</body>
+</html>
