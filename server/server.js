@@ -835,11 +835,17 @@ app.post('/api/teacher/evaluate-submission', async (req, res) => {
   }
 });
 
+if (String(process.env.POC_MODE || '').trim() === '1') {
+  require('./poc-mock')(app);
+  console.warn('[POC] POC_MODE=1：已挂载 /api/poc/*（内存模拟短信与支付，勿用于生产）');
+}
+
 const server = app.listen(PORT, () => {
   console.log('已连接 Supabase 云数据库');
   console.log('后端运行在 http://localhost:' + PORT);
   console.log(
-    'API: auth, practice, teacher/assignments, teacher/evaluate-submission, student/assignments, student/submit, student/submit-audio'
+    'API: auth, practice, teacher/assignments, teacher/evaluate-submission, student/assignments, student/submit, student/submit-audio' +
+      (String(process.env.POC_MODE || '').trim() === '1' ? ', poc/*' : '')
   );
 });
 
