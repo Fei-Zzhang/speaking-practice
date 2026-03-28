@@ -525,15 +525,47 @@ image.png<!DOCTYPE html>
 
       /**
        * 全局组号范围 → 整组布置（每组内全部句子）
-       * - 1-18：第 1 组～第 18 组（按题库顺序，共 36 组）
+       * - 全部 / all / *：题库中所有组
+       * - 序1-18：第 1～18 组（仅按列表顺序，与练习页左侧顺序一致）
+       * - 1-18：优先按「组 id 为纯数字」且 id∈[1,18] 选取；若范围内没有任何此类组，则退化为「序」范围
        * - A1-18：从 A1 起连续 18 组
        * - A1-F18：从组 A1 到组 F18（含两端）
-       * - 单组：5 或 A1
+       * - 单组：5 → 优先匹配 id 为 "5" 的组；若无则匹配列表第 5 组；A1 仍按 id
        */
       function parseLRWholeSetRange(text, LR_BANK) {
         var raw = (text || '').trim();
         if (!raw) return { ok: false, message: '请输入组号范围', groups: [], label: '' };
         var n = LR_BANK.length;
+
+        var rawAll = raw.toLowerCase();
+        if (raw === '全部' || raw === '全' || rawAll === 'all' || raw === '*') {
+          return {
+            ok: true,
+            groups: LR_BANK.slice(),
+            label: '全部 ' + n + ' 组',
+          };
+        }
+
+        /** 列表顺序范围：序12-18 或 pos:12-18 */
+        var mSeq = /^(?:序|pos)[:：]?\s*(\d+)\s*-\s*(\d+)$/i.exec(raw);
+        if (mSeq) {
+          var sa = parseInt(mSeq[1], 10);
+          var sb = parseInt(mSeq[2], 10);
+          if (isNaN(sa) || isNaN(sb)) return { ok: false, message: '无效数字', groups: [], label: '' };
+          if (sa > sb) {
+            var ts = sa;
+            sa = sb;
+            sb = ts;
+          }
+          if (sa < 1 || sb > n) {
+            return { ok: false, message: '顺序组号需在 1～' + n + '（题库共 ' + n + ' 组）', groups: [], label: '' };
+          }
+          return {
+            ok: true,
+            groups: LR_BANK.slice(sa - 1, sb),
+            label: '第 ' + sa + '～' + sb + ' 组（列表顺序）',
+          };
+        }
 
         var mNum = /^(\d+)\s*-\s*(\d+)$/.exec(raw);
         if (mNum) {
@@ -545,13 +577,30 @@ image.png<!DOCTYPE html>
             a = b;
             b = t;
           }
+          var lo = a;
+          var hi = b;
+          var byNumericId = [];
+          for (var ii = 0; ii < LR_BANK.length; ii++) {
+            var gidi = LR_BANK[ii].id;
+            if (gidi != null && /^\d+$/.test(String(gidi))) {
+              var gnid = parseInt(String(gidi), 10);
+              if (!isNaN(gnid) && gnid >= lo && gnid <= hi) byNumericId.push(LR_BANK[ii]);
+            }
+          }
+          if (byNumericId.length > 0) {
+            return {
+              ok: true,
+              groups: byNumericId,
+              label: '组 id ' + lo + '～' + hi + '（纯数字 id）',
+            };
+          }
           if (a < 1 || b > n) {
-            return { ok: false, message: '组号范围需在 1～' + n + '（题库共 ' + n + ' 组，顺序与练习页一致）', groups: [], label: '' };
+            return { ok: false, message: '组号范围需在 1～' + n + '（题库共 ' + n + ' 组）；数字组请用组 id，如 5 或 1-18，列表顺序请用 序1-18', groups: [], label: '' };
           }
           return {
             ok: true,
             groups: LR_BANK.slice(a - 1, b),
-            label: '第 ' + a + '～' + b + ' 组',
+            label: '第 ' + a + '～' + b + ' 组（列表顺序）',
           };
         }
 
@@ -595,11 +644,15 @@ image.png<!DOCTYPE html>
         }
 
         if (/^\d+$/.test(raw)) {
+          var ixNum = findGroupIndexLR(LR_BANK, raw);
+          if (ixNum >= 0) {
+            return { ok: true, groups: [LR_BANK[ixNum]], label: '组 id ' + raw };
+          }
           var gn = parseInt(raw, 10);
           if (isNaN(gn) || gn < 1 || gn > n) {
-            return { ok: false, message: '组号须在 1～' + n, groups: [], label: '' };
+            return { ok: false, message: '未找到组 id「' + raw + '」，且顺序组号须在 1～' + n, groups: [], label: '' };
           }
-          return { ok: true, groups: [LR_BANK[gn - 1]], label: '第 ' + gn + ' 组' };
+          return { ok: true, groups: [LR_BANK[gn - 1]], label: '第 ' + gn + ' 组（列表顺序）' };
         }
         if (/^[A-Za-z]\d+$/.test(raw)) {
           var ix = findGroupIndexLR(LR_BANK, raw);
@@ -609,7 +662,7 @@ image.png<!DOCTYPE html>
 
         return {
           ok: false,
-          message: '格式示例：1-18、A1-18、A1-F18 或单组 5 / A1',
+          message: '格式示例：全部、序1-18（列表顺序）、1-18（纯数字 id）、A1-18、A1-F18、单组 5（优先 id）或 A1',
           groups: [],
           label: '',
         };
@@ -1644,17 +1697,21 @@ image.png<!DOCTYPE html>
           root.innerHTML = `
             <div class="header"><h1>Listen &amp; Repeat · 全局组号布置</h1><div class="header-right"><button data-action="backLR0">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);font-size:0.9rem;margin-top:0">题库中组顺序与练习页一致，共 <strong>${LR_BANK.length}</strong> 组。<strong>全局组号</strong>即第几组（1 起）；布置范围为<strong>整组全部句子</strong>。</p>
+              <p style="color:var(--muted);font-size:0.9rem;margin-top:0">题库中组顺序与练习页一致，共 <strong>${LR_BANK.length}</strong> 组。布置范围为<strong>整组全部句子</strong>。题库含<strong>字母 id</strong>（如 A1）与<strong>纯数字 id</strong>（如 5、12）两套组，规则如下。</p>
               <ul style="color:var(--muted);font-size:0.85rem;margin:0.5rem 0 0 1.1rem;line-height:1.5">
-                <li><code>1-18</code>：第 1 组～第 18 组（如 A1～F18）</li>
-                <li><code>A1-18</code>：从 <strong>A1</strong> 起连续 <strong>18</strong> 组（与上例等价）</li>
+                <li><code>全部</code>、<code>*</code> 或 <code>all</code>：<strong>所有组</strong>（一键全选）</li>
+                <li><code>序1-${LR_BANK.length}</code> 或 <code>pos:1-18</code>：按<strong>列表顺序</strong>第几组到第几组（用于连续字母段）</li>
+                <li><code>1-18</code>：优先选<strong>组 id 为纯数字</strong>且在 1～18 的组；若无匹配再按列表顺序解析</li>
+                <li><code>A1-18</code>：从 <strong>A1</strong> 起连续 18 组</li>
                 <li><code>A1-F18</code>：从组 <strong>A1</strong> 到组 <strong>F18</strong>（按题库顺序，含两端）</li>
-                <li>单组：<code>5</code> 或 <code>E16</code></li>
+                <li>单组：纯数字优先匹配<strong>组 id</strong>（如 <code>5</code> 对应 id「5」）；否则为列表第 n 组；字母组写 <code>E16</code></li>
               </ul>
               <label style="display:block;margin-top:0.75rem">组号范围</label>
               <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.35rem">
-                <input type="text" id="lrTeacherNums" class="fill-input" style="max-width:100%;flex:1;min-width:200px" placeholder="例如：1-18 或 A1-18 或 A1-F18" value="${escapeHtml(state.teacherLRNums)}">
+                <input type="text" id="lrTeacherNums" class="fill-input" style="max-width:100%;flex:1;min-width:200px" placeholder="例如：全部、序1-18、1-18、A1-18" value="${escapeHtml(state.teacherLRNums)}">
                 <button type="button" class="primary" id="btnLrTeacherPreview" style="padding:0.55rem 1rem">刷新预览</button>
+                <button type="button" id="btnLrFillAll" style="padding:0.55rem 1rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);cursor:pointer">填入「全部」</button>
+                <button type="button" id="btnLrFillSeq" style="padding:0.55rem 1rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);cursor:pointer">填入「序1-${LR_BANK.length}」</button>
               </div>
               ${previewHtml}
             </div>
@@ -1669,11 +1726,35 @@ image.png<!DOCTYPE html>
 
           var numEl = document.getElementById('lrTeacherNums');
           var btnPrev = document.getElementById('btnLrTeacherPreview');
+          function persistLrTeacherForm() {
+            state.teacherLRNums = (numEl && numEl.value) || '';
+            state.teacherAssignTitle =
+              (document.getElementById('lrTeacherTitle') && document.getElementById('lrTeacherTitle').value) || '';
+            state.teacherAssignStudents =
+              (document.getElementById('lrTeacherStudents') && document.getElementById('lrTeacherStudents').value) || '';
+          }
           if (btnPrev) {
             btnPrev.onclick = function () {
-              state.teacherLRNums = (numEl && numEl.value) || '';
-              state.teacherAssignTitle = (document.getElementById('lrTeacherTitle') && document.getElementById('lrTeacherTitle').value) || '';
-              state.teacherAssignStudents = (document.getElementById('lrTeacherStudents') && document.getElementById('lrTeacherStudents').value) || '';
+              persistLrTeacherForm();
+              render();
+            };
+          }
+          var btnFillAll = document.getElementById('btnLrFillAll');
+          if (btnFillAll) {
+            btnFillAll.onclick = function () {
+              if (numEl) numEl.value = '全部';
+              state.teacherLRNums = '全部';
+              persistLrTeacherForm();
+              render();
+            };
+          }
+          var btnFillSeq = document.getElementById('btnLrFillSeq');
+          if (btnFillSeq) {
+            btnFillSeq.onclick = function () {
+              var seqVal = '序1-' + LR_BANK.length;
+              if (numEl) numEl.value = seqVal;
+              state.teacherLRNums = seqVal;
+              persistLrTeacherForm();
               render();
             };
           }
