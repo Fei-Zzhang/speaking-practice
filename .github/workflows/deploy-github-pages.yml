@@ -1,4 +1,4 @@
-# 每次推送到 main 自动发布到 GitHub Pages（需在仓库 Settings → Pages → Source 选「GitHub Actions」）
+# 推送 main 后自动发布到 GitHub Pages（Settings → Pages → Source 选 GitHub Actions）
 name: Deploy GitHub Pages
 
 on:
@@ -16,21 +16,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v4
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
     steps:
+      - uses: actions/checkout@v4
+      - name: 核对仓库里的 standalone.html（日志里可看是否含最新提交）
+        run: |
+          test -f standalone.html && head -n 5 standalone.html || echo "缺少 standalone.html"
+          wc -c standalone.html 2>/dev/null || true
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
       - id: deployment
         uses: actions/deploy-pages@v4
