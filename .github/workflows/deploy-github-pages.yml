@@ -23,7 +23,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v5+ 使用 Node 24，避免 Node 20 弃用告警（2026 年起默认强制 Node 24）
+      - uses: actions/checkout@v6
 
       - name: 仅打包静态站点文件（避免整仓体积超限）
         run: |
@@ -35,9 +36,11 @@ jobs:
           ls -la _site
           wc -c _site/standalone.html
 
-      - uses: actions/configure-pages@v4
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v5
+      # v4 默认不包含以 . 开头的文件，需显式包含 .nojekyll
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
+          include-hidden-files: true
       - id: deployment
         uses: actions/deploy-pages@v4
