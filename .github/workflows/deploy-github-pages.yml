@@ -1,4 +1,5 @@
-# 推送 main 后自动发布到 GitHub Pages（Settings → Pages → Source 选 GitHub Actions）
+# 推送 main 后发布 GitHub Pages。
+# 注意：不能 path: . 整仓上传——仓库含 node_modules 等，会超过 artifact 限制导致 upload-pages-artifact 失败。
 name: Deploy GitHub Pages
 
 on:
@@ -23,13 +24,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 核对仓库里的 standalone.html（日志里可看是否含最新提交）
+
+      - name: 仅打包静态站点文件（避免整仓体积超限）
         run: |
-          test -f standalone.html && head -n 5 standalone.html || echo "缺少 standalone.html"
-          wc -c standalone.html 2>/dev/null || true
+          mkdir -p _site
+          cp standalone.html index.html student.html teacher.html _site/
+          cp .nojekyll _site/ 2>/dev/null || touch _site/.nojekyll
+          cp grammartestmaterial.text topicdevelopmenttestmaterial.text wordingtestmaterial.text practice-bank.cache.json _site/
+          cp -r "Listen&Repeat练习" _site/
+          ls -la _site
+          wc -c _site/standalone.html
+
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
