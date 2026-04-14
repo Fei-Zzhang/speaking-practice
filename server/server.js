@@ -122,7 +122,10 @@ async function getStudentInterviewApproval(username) {
   return { ok: true, approved: !!user.interview_grading_approved };
 }
 
-/** Interview 腾讯云实时流式 ASR：教师可用；学生需已开通 interview_grading_approved（与作业云端批改一致，不计费说明见文档） */
+/**
+ * Interview 腾讯云实时流式 ASR：教师可用；学生端凡已登录学生均可（与「实时转写」第一步一致，不计费见腾讯云文档）。
+ * 云端批改（Python asr-eval）仍受 interview_grading_approved 控制。
+ */
 async function getTencentStreamEligibility(username) {
   const uname = String(username || '').trim();
   if (!uname) return { ok: false, message: '需要 username' };
@@ -134,8 +137,19 @@ async function getTencentStreamEligibility(username) {
   if (error || !user) return { ok: false, message: '用户不存在' };
   const role = user.role || 'student';
   if (role === 'teacher') return { ok: true };
-  if (role === 'student' && user.interview_grading_approved) return { ok: true };
-  return { ok: false, message: '需要开通 Interview 云端批改后才可使用腾讯云实时识别' };
+  if (role === 'student') return { ok: true };
+  return { ok: false, message: '无效用户' };
+}
+
+/** 学生 Interview 实时转写同步到教师端（内存；单实例有效，多实例需 Redis） */
+const liveInterviewTranscripts = new Map();
+const LIVE_TRANSCRIPT_TTL_MS = 15 * 60 * 1000;
+
+function pruneLiveInterviewTranscripts() {
+  const now = Date.now();
+  for (const [k, v] of liveInterviewTranscripts) {
+    if (now - (v.updatedAt || 0) > LIVE_TRANSCRIPT_TTL_MS) liveInterviewTranscripts.delete(k);
+  }
 }
 
 // 允许任意来源访问（本地开发）；部署时可改为具体前端域名
@@ -156,7 +170,7 @@ app.get('/api/health', (req, res) => {
 
 /**
  * 签发腾讯云「实时语音识别」WebSocket URL（浏览器直连 wss://asr.cloud.tencent.com）
- * 鉴权与计费见腾讯云文档；学生与 Interview 云端批改权限绑定。
+ * 鉴权与计费见腾讯云文档；凡已注册学生/教师均可申请签名（与云端批改开通无关）。
  */
 app.get('/api/tencent-asr/sign', async (req, res) => {
   try {
@@ -180,6 +194,87 @@ app.get('/api/tencent-asr/sign', async (req, res) => {
       { engine_model_type: engineModelType }
     );
     res.json({ ok: true, url, voiceId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
+/** 学生端上报 Interview 实时转写片段（供教师轮询）；需在线登录密码 */
+app.post('/api/student/interview-live-transcript', async (req, res) => {
+  try {
+    pruneLiveInterviewTranscripts();
+    const { username, password, text, source, assignmentId, questionId } = req.body || {};
+    const uname = String(username || '').trim();
+    const pwd = String(password || '');
+    if (!uname || !pwd) return res.status(400).json({ ok: false, message: '需要 username 与 password' });
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('username, password, role')
+      .eq('username', uname)
+      .maybeSingle();
+    if (error || !user) return res.status(401).json({ ok: false, message: '用户不存在' });
+    if ((user.role || 'student') !== 'student') return res.status(403).json({ ok: false, message: '仅学生可上报' });
+    if (user.password !== pwd) return res.status(401).json({ ok: false, message: '密码错误' });
+    const t = String(text || '');
+    liveInterviewTranscripts.set(uname, {
+      text: t.slice(0, 120000),
+      source: String(source || '').slice(0, 32),
+      assignmentId: assignmentId ? String(assignmentId).slice(0, 64) : '',
+      questionId: questionId ? String(questionId).slice(0, 128) : '',
+      updatedAt: Date.now(),
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
+/**
+ * 教师查询某学生的最新实时转写（内存）。请用 POST，避免密码出现在 URL。
+ * 已验证教师身份后，可查看任意注册学生（与是否布置作业无关）。
+ */
+app.post('/api/teacher/interview-live-transcript', async (req, res) => {
+  try {
+    pruneLiveInterviewTranscripts();
+    const body = req.body || {};
+    const teacherUsername = String(body.teacherUsername || body.username || '').trim();
+    const teacherPassword = String(body.password || '').trim();
+    const studentUsername = String(body.studentUsername || body.student || '').trim();
+    if (!teacherUsername || !teacherPassword || !studentUsername) {
+      return res.status(400).json({ ok: false, message: '需要 teacherUsername、password、studentUsername' });
+    }
+    const { data: teacher, error: te } = await supabase
+      .from('users')
+      .select('username, password, role')
+      .eq('username', teacherUsername)
+      .maybeSingle();
+    if (te || !teacher) return res.status(401).json({ ok: false, message: '教师账号不存在' });
+    if ((teacher.role || 'student') !== 'teacher') return res.status(403).json({ ok: false, message: '仅教师可查看' });
+    if (teacher.password !== teacherPassword) return res.status(401).json({ ok: false, message: '密码错误' });
+
+    const { data: stu, error: suErr } = await supabase
+      .from('users')
+      .select('username, role')
+      .eq('username', studentUsername)
+      .maybeSingle();
+    if (suErr || !stu) return res.status(404).json({ ok: false, message: '学生不存在' });
+    if ((stu.role || 'student') !== 'student') return res.status(403).json({ ok: false, message: '仅可查看学生账号' });
+
+    const live = liveInterviewTranscripts.get(studentUsername) || null;
+    res.json({
+      ok: true,
+      live: live
+        ? {
+            text: live.text,
+            source: live.source,
+            assignmentId: live.assignmentId || null,
+            questionId: live.questionId || null,
+            updatedAt: live.updatedAt,
+          }
+        : null,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, message: '服务器错误' });
@@ -1035,7 +1130,7 @@ const server = app.listen(PORT, () => {
   console.log('已连接 Supabase 云数据库');
   console.log('后端运行在 http://localhost:' + PORT);
   console.log(
-    'API: auth/register-student, auth/login, tencent-asr/sign, practice, teacher/assignments, teacher/student-interview-grading, teacher/evaluate-submission, student/assignments, student/submit, student/interview-self-eval, student/submit-audio' +
+    'API: auth/register-student, auth/login, tencent-asr/sign, student/interview-live-transcript, teacher/interview-live-transcript, practice, teacher/assignments, teacher/student-interview-grading, teacher/evaluate-submission, student/assignments, student/submit, student/interview-self-eval, student/submit-audio' +
       (String(process.env.POC_MODE || '').trim() === '1' ? ', poc/*' : '')
   );
   if (TENCENT_ASR_APP_ID && TENCENT_ASR_SECRET_ID && TENCENT_ASR_SECRET_KEY) {

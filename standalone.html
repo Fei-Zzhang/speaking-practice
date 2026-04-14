@@ -1,4 +1,4 @@
-image.png<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -117,6 +117,8 @@ image.png<!DOCTYPE html>
       /** 学生作业匹配名曾单独存 session；现与登录名统一，仅作兼容旧会话 */
       const STUDENT_NAME_STORAGE_KEY = 'speaking_student_display_name';
       const INTERVIEW_APPROVAL_KEY = 'speaking_interview_grading';
+      /** 在线登录后暂存密码，仅用于实时转写上报 / 教师拉取（sessionStorage，退出即删） */
+      const SPEAKING_SESSION_PWD_KEY = 'speaking_session_pwd';
       const TRANSCRIPT_LOG_KEY = 'speaking_transcript_log_v1';
 
       /** Listen & Repeat 子页面路径（文件夹名含 &，需编码） */
@@ -260,6 +262,8 @@ image.png<!DOCTYPE html>
         teacherAssignmentDetail: null,
         teacherAssignmentLoading: false,
         teacherAssignmentError: '',
+        /** 教师端「Interview 实时转写」监听的学生名 */
+        teacherLiveStudent: '',
         studentAssignmentsLoading: false,
         studentListLoadError: '',
         studentAssignments: null,
@@ -292,6 +296,7 @@ image.png<!DOCTYPE html>
       let studentReadTimerId = null;
       let studentReadKickTimeoutId = null;
       let teacherAssignmentRefreshTimerId = null;
+      let teacherLivePollTimer = null;
       let realRecorder = null;
       let realRecorderStream = null;
       let realRecorderChunks = [];
@@ -308,8 +313,52 @@ image.png<!DOCTYPE html>
       function canUseTencentAsrStream() {
         if (!API_NODE || !getCurrentUser()) return false;
         if (PORTAL === 'teacher') return true;
-        if (PORTAL === 'student') return getInterviewGradingApproved();
+        if (PORTAL === 'student') return getCurrentRole() === 'student' && !!getCurrentUser();
         return false;
+      }
+
+      function getSessionPassword() {
+        try {
+          return sessionStorage.getItem(SPEAKING_SESSION_PWD_KEY) || '';
+        } catch (_) {
+          return '';
+        }
+      }
+      function setSessionPassword(pwd) {
+        try {
+          if (pwd) sessionStorage.setItem(SPEAKING_SESSION_PWD_KEY, String(pwd));
+          else sessionStorage.removeItem(SPEAKING_SESSION_PWD_KEY);
+        } catch (_) {}
+      }
+      var _liveTranscriptPushTimer = null;
+      function scheduleInterviewLiveTranscriptPush(text, source, meta) {
+        if (!API_NODE || PORTAL !== 'student') return;
+        var u = getCurrentUser();
+        var pwd = getSessionPassword();
+        if (!u || !pwd) return;
+        if (_liveTranscriptPushTimer) clearTimeout(_liveTranscriptPushTimer);
+        _liveTranscriptPushTimer = setTimeout(function () {
+          _liveTranscriptPushTimer = null;
+          var m = meta && typeof meta === 'object' ? meta : {};
+          fetch(API_NODE + '/api/student/interview-live-transcript', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: u,
+              password: pwd,
+              text: String(text || ''),
+              source: String(source || ''),
+              assignmentId: m.assignmentId || '',
+              questionId: m.questionId || ''
+            })
+          }).catch(function () {});
+        }, 400);
+      }
+      function clearTeacherLivePoll() {
+        if (teacherLivePollTimer) {
+          clearInterval(teacherLivePollTimer);
+          teacherLivePollTimer = null;
+        }
       }
 
       function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
@@ -700,6 +749,7 @@ image.png<!DOCTYPE html>
           sessionStorage.removeItem('speaking_view');
           sessionStorage.removeItem(STUDENT_NAME_STORAGE_KEY);
           sessionStorage.removeItem(INTERVIEW_APPROVAL_KEY);
+          sessionStorage.removeItem(SPEAKING_SESSION_PWD_KEY);
         } catch (_) {}
       }
       function getStudentTaskName() {
@@ -1133,6 +1183,9 @@ image.png<!DOCTYPE html>
         const root = document.getElementById('root');
         const section = sections.find(s => s.id === state.sectionId);
         const currentUser = getCurrentUser();
+        if (state.mainChoice !== 'teacherLiveTranscript') {
+          clearTeacherLivePoll();
+        }
         // 刷新后恢复视图：仅教师可回到「模块选择」；学生始终为作业首页
         if (currentUser) {
           try {
@@ -1316,6 +1369,7 @@ image.png<!DOCTYPE html>
                         if (data && data.ok) {
                           setCurrentUser(data.username);
                           setCurrentRole(data.role || (PORTAL === 'teacher' ? 'teacher' : 'student'));
+                          setSessionPassword(pwd);
                           if (PORTAL === 'student') {
                             setInterviewGradingApproved(!!data.interviewGradingApproved);
                             state.view = 'list';
@@ -1475,6 +1529,11 @@ image.png<!DOCTYPE html>
                 <p>按学生<strong>注册用户名</strong>开通或关闭 Interview 云端 ASR+批改（作业与自主练习）。Listen &amp; Repeat 无需开通。</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
+              <div class="card" data-action="main" data-choice="teacherLiveTranscript">
+                <h2>Interview · 实时转写</h2>
+                <p>输入学生<strong>注册用户名</strong>，查看其题库练习或作业录音时的<strong>实时转写</strong>（学生须在线登录并正在说话）。</p>
+                <button class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
             </div>
           `;
           root.querySelectorAll('[data-action=main]').forEach(function (btn) {
@@ -1498,6 +1557,9 @@ image.png<!DOCTYPE html>
                 state.teacherLRNums = state.teacherLRNums || '';
                 state.teacherAssignTitle = state.teacherAssignTitle || '';
                 state.teacherAssignStudents = state.teacherAssignStudents || '';
+              }
+              if (state.mainChoice === 'teacherLiveTranscript') {
+                state.teacherLiveStudent = state.teacherLiveStudent || '';
               }
               render();
             };
@@ -1523,7 +1585,7 @@ image.png<!DOCTYPE html>
         if (state.view === 'list' && state.mainChoice === null && PORTAL === 'student') {
           root.innerHTML = `
             <div class="header" style="flex-wrap:wrap;gap:0.5rem"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem">${headerHubBtn()}<h1 style="margin:0">学生端 · 门户</h1></div><div class="header-right">${headerRight()}</div></div>
-            <p style="color:var(--muted);margin-bottom:1rem">登录名即<strong>学生身份</strong>，教师布置作业时填写的「学生姓名」须与注册名<strong>完全一致</strong>。Interview 云端批改需教师开通；可用浏览器<strong>实时语音转写</strong>复制到外部 AI。Listen &amp; Repeat 评测无需申请。</p>
+            <p style="color:var(--muted);margin-bottom:1rem">登录名即<strong>学生身份</strong>，教师布置作业时填写的「学生姓名」须与注册名<strong>完全一致</strong>。Interview <strong>实时转写</strong>在线登录即可同步教师端；云端批改需教师另开通。Listen &amp; Repeat 评测无需申请。</p>
             <div class="main-choice">
               <div class="card" data-action="stuPortal" data-stu="real">
                 <h2>Interview · 题库练习</h2>
@@ -1591,6 +1653,104 @@ image.png<!DOCTYPE html>
             state.mockPart = null;
             render();
           };
+          return;
+        }
+
+        // ---------- 教师：Interview 实时转写（学生端上报 → 轮询）----------
+        if (state.mainChoice === 'teacherLiveTranscript') {
+          clearTeacherLivePoll();
+          var liveStu = state.teacherLiveStudent || '';
+          var livePwd = getSessionPassword();
+          root.innerHTML = `
+            <div class="header"><h1>Interview · 实时转写</h1><div class="header-right"><button data-action="backTL">返回</button> ${headerRight()}</div></div>
+            <div class="card">
+              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库练习」或 Interview 作业中<strong>正在录音</strong>；本页约每 1.5 秒拉取一次最新文本。</p>
+              <label for="tlStudent">学生注册用户名</label>
+              <input type="text" id="tlStudent" class="fill-input" style="margin-top:0.35rem;margin-bottom:0.75rem" placeholder="与学生登录名一致" value="${escapeHtml(liveStu)}">
+              <button type="button" class="primary" id="tlStart">开始监听</button>
+              <p id="tlErr" style="color:var(--wrong);margin-top:0.75rem;display:none"></p>
+              <div id="tlMeta" style="color:var(--muted);font-size:0.85rem;margin-top:0.75rem"></div>
+              <div id="tlBox" class="transcript-box" style="margin-top:0.75rem">（开始监听后显示；若学生未说话或未上报，可能为空）</div>
+            </div>
+          `;
+          root.querySelector('[data-action=backTL]').onclick = function () {
+            clearTeacherLivePoll();
+            state.mainChoice = null;
+            render();
+          };
+          root.querySelector('[data-action=logout]').onclick = function () {
+            clearTeacherLivePoll();
+            clearCurrentUser();
+            state.mainChoice = null;
+            state.view = 'list';
+            render();
+          };
+          if (!API_NODE || !livePwd) {
+            var errEl0 = document.getElementById('tlErr');
+            if (errEl0) {
+              errEl0.style.display = 'block';
+              errEl0.textContent = !livePwd
+                ? '请使用在线登录教师账号（离线登录无法拉取实时转写）。'
+                : '未配置 API 地址';
+            }
+          } else {
+            var pollFn = function () {
+              var inp = document.getElementById('tlStudent');
+              var st = (inp && inp.value ? inp.value : liveStu || '').trim();
+              if (!st) return;
+              state.teacherLiveStudent = st;
+              fetch(API_NODE + '/api/teacher/interview-live-transcript', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  teacherUsername: currentUser,
+                  password: getSessionPassword(),
+                  studentUsername: st
+                })
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  var err = document.getElementById('tlErr');
+                  var meta = document.getElementById('tlMeta');
+                  var box = document.getElementById('tlBox');
+                  if (!data || !data.ok) {
+                    if (err) {
+                      err.style.display = 'block';
+                      err.textContent = (data && data.message) ? data.message : '拉取失败';
+                    }
+                    return;
+                  }
+                  if (err) err.style.display = 'none';
+                  if (meta && data.live) {
+                    meta.textContent =
+                      '来源：' +
+                      (data.live.source || '-') +
+                      ' · 更新时间：' +
+                      new Date(data.live.updatedAt).toLocaleString();
+                  } else if (meta) {
+                    meta.textContent = '学生尚未上报转写（未在录音或会话未同步）。';
+                  }
+                  if (box) box.textContent = (data.live && data.live.text) || '（暂无）';
+                })
+                .catch(function () {
+                  var err = document.getElementById('tlErr');
+                  if (err) {
+                    err.style.display = 'block';
+                    err.textContent = '无法连接后端';
+                  }
+                });
+            };
+            var btnStart = document.getElementById('tlStart');
+            if (btnStart) {
+              btnStart.onclick = function () {
+                clearTeacherLivePoll();
+                pollFn();
+                teacherLivePollTimer = setInterval(pollFn, 1500);
+              };
+            }
+          }
           return;
         }
 
@@ -2797,6 +2957,20 @@ image.png<!DOCTYPE html>
             recHtml = '<div class="card"><button class="primary" id="btnStRecord" ' + (dis ? 'disabled' : '') + '>' + (state.realTestRecording ? '停止录音并提交音频' : '开始录音') + '</button></div>';
           }
 
+          var isInterviewQ = cur.mode !== 'listenRepeat';
+          var liveTransHtml = '';
+          if (!completed && isInterviewQ) {
+            liveTransHtml =
+              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3><p style="color:var(--muted);font-size:0.85rem">在线登录时同步教师端「Interview · 实时转写」。</p>' +
+              '<div id="realWebSpeechBox" class="transcript-box">' +
+              (escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示）') +
+              '</div></div>' +
+              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3><p style="color:var(--muted);font-size:0.85rem">需 server 配置 TENCENT_ASR_*。</p>' +
+              '<div id="realTencentBox" class="transcript-box">' +
+              (escapeHtml(state.realTencentLive || '') || '（录音中显示）') +
+              '</div></div>';
+          }
+
           var resHtml = '';
           if (!useBatchFlow && state.realTestLoading) {
             resHtml = '<div class="card" style="border-color:var(--accent)"><strong>正在提交音频…</strong></div>';
@@ -2859,6 +3033,7 @@ image.png<!DOCTYPE html>
             ${readBlock}
             ${state.realTestRecording ? '<div class="countdown-box ' + (state.realTestSecondsLeft <= 10 ? 'warn' : '') + '" style="margin-bottom:1rem"><span class="num" id="realCountdownNum">' + state.realTestSecondsLeft + '</span><span style="color:var(--muted)"> 秒</span></div>' : ''}
             ${recHtml}
+            ${liveTransHtml}
             ${resHtml}
           `;
 
@@ -2873,6 +3048,8 @@ image.png<!DOCTYPE html>
             if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
             stopStudentReadTimer();
             invalidateStudentReadKick();
+            stopTencentRealtimeAsr();
+            stopRealPracticeSpeech();
             state.realTestRecording = false;
             state.realTestLoading = false;
             state.studentSubmitBusy = false;
@@ -2888,6 +3065,8 @@ image.png<!DOCTYPE html>
             state.studentBatchSessionEndMs = null;
             state.realTestResult = null;
             state.realTestError = '';
+            state.realWebSpeechLive = '';
+            state.realTencentLive = '';
             render();
           };
           var stPrev = root.querySelector('[data-action=stPrev]');
@@ -2895,11 +3074,15 @@ image.png<!DOCTYPE html>
             if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
             stopStudentReadTimer();
             invalidateStudentReadKick();
+            stopTencentRealtimeAsr();
+            stopRealPracticeSpeech();
             state.studentTaskIndex = idxST - 1;
             state.studentPhase = 'idle';
             state.realTestRecording = false;
             state.realTestResult = null;
             state.realTestError = '';
+            state.realWebSpeechLive = '';
+            state.realTencentLive = '';
             render();
           };
           var stNext = root.querySelector('[data-action=stNext]');
@@ -2907,11 +3090,15 @@ image.png<!DOCTYPE html>
             if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
             stopStudentReadTimer();
             invalidateStudentReadKick();
+            stopTencentRealtimeAsr();
+            stopRealPracticeSpeech();
             state.studentTaskIndex = idxST + 1;
             state.studentPhase = 'idle';
             state.realTestRecording = false;
             state.realTestResult = null;
             state.realTestError = '';
+            state.realWebSpeechLive = '';
+            state.realTencentLive = '';
             render();
           };
 
@@ -2926,6 +3113,50 @@ image.png<!DOCTYPE html>
                   return;
                 }
                 navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+                  stopTencentRealtimeAsr();
+                  stopRealPracticeSpeech();
+                  state.realWebSpeechLive = '';
+                  state.realTencentLive = '';
+                  state._studentLiveMeta = {
+                    assignmentId: state.studentAssignmentId || '',
+                    questionId: buildAssignmentQuestionKey(cur, idxST) || qid || ''
+                  };
+                  if (isInterviewQ && canUseTencentAsrStream()) {
+                    startTencentRealtimeAsr(
+                      stream,
+                      function (text) {
+                        state.realTencentLive = text;
+                        scheduleInterviewLiveTranscriptPush(text, 'tencent', state._studentLiveMeta);
+                        var el = document.getElementById('realTencentBox');
+                        if (el) el.textContent = text || '（识别中…）';
+                      },
+                      function () {}
+                    );
+                  }
+                  if (isInterviewQ) {
+                    var SpeechRecognitionST = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    if (SpeechRecognitionST) {
+                      try {
+                        realSpeechRecognition = new SpeechRecognitionST();
+                        realSpeechRecognition.continuous = true;
+                        realSpeechRecognition.interimResults = true;
+                        realSpeechRecognition.lang = 'en-US';
+                        realSpeechRecognition.onresult = function (e) {
+                          var t = Array.from(e.results)
+                            .map(function (r) {
+                              return r[0].transcript;
+                            })
+                            .join('');
+                          state.realWebSpeechLive = t;
+                          scheduleInterviewLiveTranscriptPush(t, 'webspeech', state._studentLiveMeta);
+                          var box = document.getElementById('realWebSpeechBox');
+                          if (box) box.textContent = t || '（正在识别…）';
+                        };
+                        realSpeechRecognition.onerror = function () {};
+                        realSpeechRecognition.start();
+                      } catch (e) {}
+                    }
+                  }
                   realRecorderStream = stream;
                   realRecorderChunks = [];
                   var recOpts = null;
@@ -2938,6 +3169,8 @@ image.png<!DOCTYPE html>
                     realRecorder = recOpts ? new MediaRecorder(stream, recOpts) : new MediaRecorder(stream);
                   } catch (e) {
                     try { realRecorder = new MediaRecorder(stream); } catch (e2) {
+                      stopTencentRealtimeAsr();
+                      stopRealPracticeSpeech();
                       alert('无法录音：' + e2.message);
                       stream.getTracks().forEach(function (t) { t.stop(); });
                       return;
@@ -2948,6 +3181,8 @@ image.png<!DOCTYPE html>
                     if (e.data && e.data.size > 0) realRecorderChunks.push(e.data);
                   };
                   realRecorder.onstop = function () {
+                    stopTencentRealtimeAsr();
+                    stopRealPracticeSpeech();
                     if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
                     state.realTestSecondsLeft = SPEAKING_DURATION;
                     state.realTestRecording = false;
@@ -3120,6 +3355,8 @@ image.png<!DOCTYPE html>
               } else {
                 if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
                 state.realTestSecondsLeft = SPEAKING_DURATION;
+                stopTencentRealtimeAsr();
+                stopRealPracticeSpeech();
                 if (realRecorder) { try { realRecorder.stop(); } catch (_) {} }
                 state.realTestRecording = false;
                 render();
@@ -3130,6 +3367,8 @@ image.png<!DOCTYPE html>
             clearCurrentUser();
             stopStudentReadTimer();
             if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
+            stopTencentRealtimeAsr();
+            stopRealPracticeSpeech();
             state.mainChoice = null;
             state.view = 'list';
             render();
@@ -3318,13 +3557,13 @@ image.png<!DOCTYPE html>
           var stuCloudHint =
             PORTAL === 'student'
               ? getInterviewGradingApproved()
-                ? '<p style="color:var(--correct);font-size:0.9rem;margin-top:0.5rem">你已开通 Interview 云端评测：录音将经服务器转发至 ASR+批改。</p>'
-                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，请使用下方<strong>实时语音转写</strong>复制到外部 AI；教师可在「Interview · 云端批改开通」为你开通。</p>'
+                ? '<p style="color:var(--correct);font-size:0.9rem;margin-top:0.5rem">你已开通 Interview 云端评测：停止录音后将经服务器做 ASR+批改。</p>'
+                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，仍可使用下方<strong>实时转写</strong>；在线登录时转写会同步到教师端「Interview · 实时转写」。</p>'
               : '';
           var stuPrompt =
             PORTAL === 'student'
               ? '用英文作答约 45 秒。点击「开始录音」后说话；停止后将' +
-                (getInterviewGradingApproved() ? '提交云端评测。' : '尝试云端评测（未开通则见错误提示，请用实时转写）。')
+                (getInterviewGradingApproved() ? '提交云端评测。' : '尝试云端评测（未开通则见提示）；实时转写可先用于练习与教师同步。')
               : '请根据下面的提示，用英文作答（45 秒左右），点击「开始录音」后开始说，结束后系统会把音频上传到后端做 ASR + 口语评测。';
 
           root.innerHTML = `
@@ -3354,8 +3593,8 @@ image.png<!DOCTYPE html>
             </div>
             <div class="card">
               <h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>
-              <p style="color:var(--muted);font-size:0.85rem">浏览器直连腾讯云 WebSocket；需在 server/.env 配置 <code>TENCENT_ASR_APP_ID</code> 与 ASR 密钥。学生须已开通 Interview 云端批改；与 Listen &amp; Repeat 无关。</p>
-              <div id="realTencentBox" class="transcript-box">${escapeHtml(state.realTencentLive || '') || '（开通并配置后，录音中显示）'}</div>
+              <p style="color:var(--muted);font-size:0.85rem">浏览器直连腾讯云 WebSocket；需在 server/.env 配置 <code>TENCENT_ASR_*</code>。凡在线登录学生均可使用（与云端批改开通无关）；在线登录时内容同步教师端。</p>
+              <div id="realTencentBox" class="transcript-box">${escapeHtml(state.realTencentLive || '') || '（服务端配置 ASR 后，录音中显示）'}</div>
               <button type="button" class="primary" style="margin-top:0.5rem" id="btnTencentSaveTranscript">将腾讯云转写加入记录</button>
             </div>
             ${statusHtml}
@@ -3421,11 +3660,22 @@ image.png<!DOCTYPE html>
                   stopRealPracticeSpeech();
                   state.realWebSpeechLive = '';
                   state.realTencentLive = '';
+                  state._studentLiveMeta = {
+                    assignmentId: '',
+                    questionId:
+                      'practice|' +
+                      (state.realTestMode || '') +
+                      '|' +
+                      (state.realTestCategoryId || '') +
+                      '|' +
+                      (state.realTestIndex || 0)
+                  };
                   if (canUseTencentAsrStream()) {
                     startTencentRealtimeAsr(
                       stream,
                       function (text) {
                         state.realTencentLive = text;
+                        scheduleInterviewLiveTranscriptPush(text, 'tencent', state._studentLiveMeta);
                         var el = document.getElementById('realTencentBox');
                         if (el) el.textContent = text || '（识别中…）';
                       },
@@ -3446,6 +3696,7 @@ image.png<!DOCTYPE html>
                           })
                           .join('');
                         state.realWebSpeechLive = t;
+                        scheduleInterviewLiveTranscriptPush(t, 'webspeech', state._studentLiveMeta);
                         var box = document.getElementById('realWebSpeechBox');
                         if (box) box.textContent = t || '（正在识别…）';
                       };
