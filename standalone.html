@@ -19,7 +19,7 @@
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; background: #fff; color: var(--text); min-height: 100vh; font-family: system-ui, "PingFang SC", sans-serif; }
-    #root { min-height: 100vh; padding: 1.5rem; max-width: 720px; margin: 0 auto; }
+    #root { min-height: 100vh; padding: 1.25rem clamp(1rem, 4vw, 2.5rem); max-width: min(1200px, 100%); width: 100%; margin: 0 auto; box-sizing: border-box; }
     .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
     .header h1 { margin: 0; font-size: 1.35rem; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
@@ -63,11 +63,22 @@
     .no-copy { user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }
     .no-copy * { user-select: none; -webkit-user-select: none; }
     .set-badge { display: inline-block; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 6px; background: var(--bg); color: var(--muted); margin-left: 0.35rem; }
-    /* 学生端顶栏 */
-    .student-top-nav { position: sticky; top: 0; z-index: 100; background: rgba(255,255,255,0.96); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); margin: -1.5rem -1.5rem 1rem; padding: 0.65rem 1rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    /* 学生端顶栏：全宽条 + 右上登录/头像 */
+    .student-top-shell { position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin: -1.25rem calc(-1 * clamp(1rem, 4vw, 2.5rem)) 1rem; padding: 0.65rem clamp(1rem, 4vw, 2.5rem); background: rgba(255,255,255,0.96); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+    .student-top-nav { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; flex: 1; min-width: 0; }
     .student-top-nav button { padding: 0.45rem 0.85rem; font-size: 0.88rem; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); }
     .student-top-nav button:hover { border-color: var(--accent); }
     .student-top-nav button.nav-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .student-top-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+    .header-user-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.95rem; line-height: 1; cursor: default; }
+    .btn-logout-pill { padding: 0.4rem 0.75rem; font-size: 0.88rem; border-radius: 8px; }
+    .material-game-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; font-size: 0.95rem; }
+    .material-game-stem { font-size: 1.05rem; line-height: 1.5; margin-bottom: 1rem; color: var(--text); }
+    .material-game-opt { display: block; width: 100%; text-align: left; padding: 0.75rem 1rem; margin-bottom: 0.5rem; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 0.95rem; }
+    .material-game-opt:hover { border-color: var(--accent); }
+    .material-game-opt.picked { border-color: var(--accent); background: rgba(99,102,241,0.12); }
+    .material-game-opt.correct { border-color: var(--correct); background: rgba(34,197,94,0.12); }
+    .material-game-opt.wrong { border-color: var(--wrong); background: rgba(239,68,68,0.08); }
     .student-home-placeholder { min-height: 80px; border: 2px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
     .student-cover-placeholder { min-height: 160px; border: 2px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
     .material-text-body { white-space: pre-wrap; font-size: 0.88rem; line-height: 1.55; max-height: min(65vh, 520px); overflow-y: auto; padding: 1rem; background: var(--bg); border-radius: 10px; border: 1px solid var(--border); text-align: left; }
@@ -223,7 +234,7 @@
         return state.studentNav || 'home';
       }
 
-      /** 学生顶栏：首页 | 登陆 | 题库 | 练习 */
+      /** 学生顶栏：首页 | 账号(已登录) | 题库 | 练习；未登录时「登录」在右上 */
       function studentTopNavHtml() {
         if (PORTAL !== 'student') return '';
         var activeId = getStudentNavActive();
@@ -231,13 +242,36 @@
           var cl = id === activeId ? 'nav-active' : '';
           return '<button type="button" class="' + cl + '" data-student-nav="' + id + '">' + label + '</button>';
         }
-        return (
-          '<nav class="student-top-nav" aria-label="主导航">' +
+        var u = getCurrentUser();
+        var navBtns =
           btn('home', '首页') +
-          btn('login', '登陆') +
+          (u ? btn('login', '账号') : '') +
           btn('bank', '题库') +
-          btn('practice', '练习') +
-          '</nav>'
+          btn('practice', '练习');
+        var right;
+        if (u) {
+          var initial = String(u).trim().charAt(0) || '?';
+          if (/[a-z]/i.test(initial)) initial = initial.toUpperCase();
+          right =
+            '<span class="header-user-avatar" title="' +
+            escapeHtml(u) +
+            '">' +
+            escapeHtml(initial) +
+            '</span><button type="button" class="btn-logout-pill" data-action="logout">退出</button>';
+        } else {
+          var loginActive = state.studentNav === 'login' ? ' nav-active' : '';
+          right =
+            '<button type="button" class="primary' + loginActive + '" data-student-nav="login">登录</button>';
+        }
+        return (
+          '<div class="student-top-shell">' +
+          '<nav class="student-top-nav" aria-label="主导航">' +
+          navBtns +
+          '</nav>' +
+          '<div class="student-top-actions">' +
+          right +
+          '</div>' +
+          '</div>'
         );
       }
 
@@ -269,6 +303,113 @@
             render();
           };
         });
+        var lo = rootEl.querySelector('[data-action=logout]');
+        if (lo) {
+          lo.onclick = function () {
+            clearCurrentUser();
+            stopStudentReadTimer();
+            state.view = 'list';
+            state.mainChoice = null;
+            state.studentNav = 'home';
+            state.mockPart = null;
+            render();
+          };
+        }
+      }
+
+      function parseGrammarLevel1Mcq(text) {
+        if (!text) return [];
+        var out = [];
+        var blockRe = /\*\*级别1：选择题\*\*[\s\S]*?```([\s\S]*?)```/g;
+        var bm;
+        while ((bm = blockRe.exec(text)) !== null) {
+          var block = bm[1];
+          var ansMap = {};
+          var am = block.match(/答案[：:]\s*([^\n`]+)/);
+          if (am) {
+            var parts = am[1].split(/[,，]/);
+            parts.forEach(function (p) {
+              var mm = String(p).trim().match(/(\d+)\s*[-–:：]\s*([A-Ca-c])/);
+              if (mm) ansMap[mm[1]] = mm[2].toUpperCase();
+            });
+          }
+          var qRe = /(\d+)\.\s*([\s\S]*?)\s*A\.\s*([^\n]+)\s*B\.\s*([^\n]+)\s*C\.\s*([^\n]+)/g;
+          var qm;
+          while ((qm = qRe.exec(block)) !== null) {
+            var n = qm[1];
+            var stem = qm[2].replace(/\s+/g, ' ').trim();
+            var oA = qm[3].trim();
+            var oB = qm[4].trim();
+            var oC = qm[5].trim();
+            var opts = [oA, oB, oC];
+            var letter = ansMap[n] || '';
+            var ai = letter === 'A' ? 0 : letter === 'B' ? 1 : letter === 'C' ? 2 : 0;
+            out.push({ stem: stem, options: opts, answerIndex: ai, n: parseInt(n, 10) });
+          }
+        }
+        return out;
+      }
+
+      function parseTopicWordBankMcq(text) {
+        if (!text) return [];
+        var sec = text.match(/####\s*练习题1：选词填空\s*```([\s\S]*?)```/);
+        if (!sec) return [];
+        var block = sec[1];
+        var bankM = block.match(/\[([^\]]+)\]/);
+        if (!bankM) return [];
+        var bank = bankM[1].split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean);
+        var out = [];
+        var lineRe = /(\d+)\.\s*([^\n(]+?)\s*\(答案：([^)]+)\)/g;
+        var lm;
+        while ((lm = lineRe.exec(block)) !== null) {
+          var stem = lm[2].trim();
+          var ansRaw = lm[3].trim();
+          var opts = bank.slice();
+          var answerIndex = -1;
+          var i;
+          for (i = 0; i < opts.length; i++) {
+            if (opts[i].toLowerCase() === ansRaw.toLowerCase()) {
+              answerIndex = i;
+              break;
+            }
+          }
+          if (answerIndex < 0) {
+            for (i = 0; i < opts.length; i++) {
+              if (opts[i].replace(/\s+/g, '').toLowerCase() === ansRaw.replace(/\s+/g, '').toLowerCase()) {
+                answerIndex = i;
+                break;
+              }
+            }
+          }
+          if (answerIndex < 0) continue;
+          out.push({ stem: stem, options: opts, answerIndex: answerIndex, n: parseInt(lm[1], 10) });
+        }
+        return out;
+      }
+
+      function shuffleMcqQuestion(q) {
+        var opts = q.options.slice();
+        var correct = opts[q.answerIndex];
+        for (var i = opts.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var t = opts[i];
+          opts[i] = opts[j];
+          opts[j] = t;
+        }
+        var newIdx = opts.indexOf(correct);
+        if (newIdx < 0) newIdx = q.answerIndex;
+        return { stem: q.stem, options: opts, answerIndex: newIdx, n: q.n };
+      }
+
+      function buildStudentMaterialMcqList(tabId, rawText, grammarFallback) {
+        if (tabId === 'grammar') return parseGrammarLevel1Mcq(rawText).map(shuffleMcqQuestion);
+        if (tabId === 'topic') return parseTopicWordBankMcq(rawText).map(shuffleMcqQuestion);
+        if (tabId === 'wording') {
+          var w = parseGrammarLevel1Mcq(rawText);
+          if (w.length) return w.map(shuffleMcqQuestion);
+          return parseGrammarLevel1Mcq(grammarFallback || '').map(shuffleMcqQuestion);
+        }
+        return [];
       }
 
       const SPEAKING_DURATION = 45;
@@ -326,6 +467,8 @@
         studentMaterialCache: {},
         studentMaterialLoading: false,
         studentMaterialError: '',
+        /** 练习材料闯关：{ tab, list, idx, score, answered, pick } */
+        studentMaterialQuiz: null,
         mockPart: null,
         sectionId: null,
         mcqAnswers: {}, mcqScore: 0, transcript: '', editCount: 0, isEditing: false, finalText: '', phase: 'idle', secondsLeft: SPEAKING_DURATION,
@@ -452,6 +595,32 @@
             })
           }).catch(function () {});
         }, 400);
+      }
+      /** 停止录音后立刻把最终转写同步到教师端（省略「加入记录」） */
+      function pushInterviewTranscriptFinal(meta) {
+        if (PORTAL !== 'student' || !API_NODE) return;
+        var u = getCurrentUser();
+        var pwd = getSessionPassword();
+        if (!u || !pwd) return;
+        if (_liveTranscriptPushTimer) {
+          clearTimeout(_liveTranscriptPushTimer);
+          _liveTranscriptPushTimer = null;
+        }
+        var t = String(state.realTencentLive || state.realWebSpeechLive || '').trim();
+        if (!t) return;
+        var m = meta && typeof meta === 'object' ? meta : {};
+        fetch(API_NODE + '/api/student/interview-live-transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: u,
+            password: pwd,
+            text: t,
+            source: 'final',
+            assignmentId: m.assignmentId || '',
+            questionId: m.questionId || ''
+          })
+        }).catch(function () {});
       }
       function clearTeacherLivePoll() {
         if (teacherLivePollTimer) {
@@ -1360,8 +1529,98 @@
             }
           }
           var bodyMat;
+          if (mfMat.id === 'wording' && state.studentMaterialCache['grammar'] == null && state.studentMaterialCache['wording'] != null) {
+            if (!state._fetchGrammarForWording) {
+              state._fetchGrammarForWording = true;
+              fetch(resolveMaterialFileUrl('grammartestmaterial.text'), { cache: 'default' })
+                .then(function (r) {
+                  if (!r.ok) throw new Error('HTTP ' + r.status);
+                  return r.text();
+                })
+                .then(function (text) {
+                  state.studentMaterialCache['grammar'] = text;
+                })
+                .catch(function () {})
+                .finally(function () {
+                  state._fetchGrammarForWording = false;
+                  render();
+                });
+            }
+          }
           if (state.studentMaterialCache[mfMat.id] != null) {
-            bodyMat = '<div class="material-text-body">' + escapeHtml(state.studentMaterialCache[mfMat.id]) + '</div>';
+            var rawM = state.studentMaterialCache[mfMat.id];
+            var gFb = state.studentMaterialCache['grammar'] || '';
+            var qlist = buildStudentMaterialMcqList(mfMat.id, rawM, gFb);
+            var quiz = state.studentMaterialQuiz;
+            if (!quiz || quiz.tab !== mfMat.id || !quiz.list || quiz.list.length !== qlist.length) {
+              state.studentMaterialQuiz = {
+                tab: mfMat.id,
+                list: qlist,
+                idx: 0,
+                score: 0,
+                answered: false,
+                pick: null
+              };
+              quiz = state.studentMaterialQuiz;
+            }
+            if (!qlist.length) {
+              bodyMat =
+                '<p style="color:var(--muted)">' +
+                (mfMat.id === 'wording' && !gFb
+                  ? '正在加载关联语法材料…'
+                  : '暂无可闯关的单选题。请确认材料中含「级别1：选择题」代码块，或「练习题1：选词填空」格式。') +
+                '</p>';
+            } else {
+              var cq = quiz.list[quiz.idx];
+              var total = quiz.list.length;
+              var optsHtml = cq.options
+                .map(function (op, oi) {
+                  var cls = 'material-game-opt';
+                  if (quiz.answered) {
+                    if (oi === cq.answerIndex) cls += ' correct';
+                    else if (quiz.pick === oi) cls += ' wrong';
+                  } else if (quiz.pick === oi) cls += ' picked';
+                  return (
+                    '<button type="button" class="' +
+                    cls +
+                    '" data-mat-opt="' +
+                    oi +
+                    '">' +
+                    escapeHtml(String.fromCharCode(65 + oi)) +
+                    '. ' +
+                    escapeHtml(op) +
+                    '</button>'
+                  );
+                })
+                .join('');
+              var btnRow =
+                !quiz.answered
+                  ? '<button type="button" class="primary" id="btnMatSubmit" ' +
+                    (quiz.pick == null ? 'disabled' : '') +
+                    '>提交本题</button>'
+                  : quiz.idx + 1 < total
+                    ? '<button type="button" class="primary" id="btnMatNext">下一关</button>'
+                    : '<p style="color:var(--correct);margin:0"><strong>闯关完成！</strong> 得分 ' +
+                      quiz.score +
+                      ' / ' +
+                      total +
+                      '</p><button type="button" id="btnMatRestart">再玩一次</button>';
+              bodyMat =
+                '<div class="material-game-head"><span><strong>大闯关</strong> · 第 ' +
+                (quiz.idx + 1) +
+                ' / ' +
+                total +
+                ' 题</span><span style="color:var(--muted)">得分 ' +
+                quiz.score +
+                '</span></div>' +
+                '<div class="material-game-stem">' +
+                escapeHtml(cq.stem) +
+                '</div>' +
+                optsHtml +
+                '<div style="margin-top:1rem">' +
+                btnRow +
+                '</div>';
+            }
           } else if (state.studentMaterialError) {
             bodyMat =
               '<p style="color:var(--wrong)">' +
@@ -1372,7 +1631,7 @@
           }
           root.innerHTML =
             navMat +
-            '<div class="card"><h2 style="margin:0 0 0.5rem">练习</h2><p style="color:var(--muted);font-size:0.9rem;margin:0">语法测试 · 话题展开 · 措辞与造句（纸质材料预览）。</p></div>' +
+            '<div class="card"><h2 style="margin:0 0 0.5rem">练习 · 大闯关</h2><p style="color:var(--muted);font-size:0.9rem;margin:0">单选题闯关，每次一题；措辞关无选择题时将使用语法材料中的选择题。</p></div>' +
             '<div class="card">' +
             tabsHtmlMat +
             bodyMat +
@@ -1382,9 +1641,46 @@
             bt.onclick = function () {
               state.studentMaterialTab = bt.getAttribute('data-mat-tab');
               state.studentMaterialError = '';
+              state.studentMaterialQuiz = null;
               render();
             };
           });
+          var qz = state.studentMaterialQuiz;
+          if (qz && qz.list && qz.list.length) {
+            root.querySelectorAll('[data-mat-opt]').forEach(function (ob) {
+              ob.onclick = function () {
+                if (qz.answered) return;
+                qz.pick = parseInt(ob.getAttribute('data-mat-opt'), 10);
+                render();
+              };
+            });
+            var sub = document.getElementById('btnMatSubmit');
+            if (sub) {
+              sub.onclick = function () {
+                if (qz.pick == null || qz.answered) return;
+                var cur = qz.list[qz.idx];
+                qz.answered = true;
+                if (qz.pick === cur.answerIndex) qz.score++;
+                render();
+              };
+            }
+            var nx = document.getElementById('btnMatNext');
+            if (nx) {
+              nx.onclick = function () {
+                qz.idx++;
+                qz.answered = false;
+                qz.pick = null;
+                render();
+              };
+            }
+            var rs = document.getElementById('btnMatRestart');
+            if (rs) {
+              rs.onclick = function () {
+                state.studentMaterialQuiz = null;
+                render();
+              };
+            }
+          }
           var rMat = document.getElementById('btnMatRetry');
           if (rMat) {
             rMat.onclick = function () {
@@ -1764,15 +2060,10 @@
           return;
         }
 
-        // 已登录时顶栏右侧：当前用户 + 退出
+        // 已登录时顶栏右侧：学生端在 student-top-shell 显示头像，此处不再重复
         function headerRight() {
+          if (PORTAL === 'student') return '';
           var line = escapeHtml(currentUser);
-          if (PORTAL === 'student') {
-            line +=
-              ' <span style="color:var(--muted);font-size:0.85rem">（Interview 云端批改：' +
-              (getInterviewGradingApproved() ? '已开通' : '未开通') +
-              '）</span>';
-          }
           return '<span class="header-user">' + line + '</span><button data-action="logout">退出</button>';
         }
         function headerRightWrap() {
@@ -1907,101 +2198,25 @@
         // 已登录：学生端首页（顶栏：首页 / 登陆 / 题库 / 练习）
         if (state.view === 'list' && state.mainChoice === null && PORTAL === 'student') {
           var stNav = studentTopNavHtml();
-          var stHead =
-            '<div style="display:flex;justify-content:flex-end;align-items:center;margin:0 0 1rem;flex-wrap:wrap;gap:0.5rem">' +
-            headerRight() +
-            '</div>';
           if (state.studentNav === 'login') {
             root.innerHTML =
               stNav +
-              stHead +
               '<div class="card"><h2 style="margin:0 0 0.5rem">账号</h2><p>当前登录：<strong>' +
               escapeHtml(currentUser) +
               '</strong></p><p style="color:var(--muted);font-size:0.9rem;margin-top:0.75rem">Interview 云端批改：' +
               (getInterviewGradingApproved() ? '已开通' : '未开通') +
               '</p></div>';
             bindStudentTopNav(root);
-            root.querySelector('[data-action=logout]').onclick = function () {
-              clearCurrentUser();
-              stopStudentReadTimer();
-              state.view = 'list';
-              state.mainChoice = null;
-              state.studentNav = 'home';
-              state.mockPart = null;
-              render();
-            };
             return;
           }
           root.innerHTML =
             stNav +
-            stHead +
             '<div class="card">' +
             '<div class="student-home-placeholder">Logo（预留）</div>' +
             '<div class="student-cover-placeholder">封面图（预留）</div>' +
-            '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">登录名即学生身份；Interview 实时转写在线登录后可同步教师端。</p>' +
-            '</div>' +
-            '<p style="color:var(--muted);margin-bottom:0.75rem;font-size:0.9rem">快捷入口</p>' +
-            '<div class="main-choice">' +
-            '<div class="card" data-action="stuPortal" data-stu="real">' +
-            '<h2>Interview · 题库练习</h2>' +
-            '<p>浏览 Interview 题库并录音练习。</p>' +
-            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
-            '</div>' +
-            '<div class="card" data-action="stuPortal" data-stu="tasks">' +
-            '<h2>我的作业</h2>' +
-            '<p>教师下发的 Interview / Listen &amp; Repeat 作业。</p>' +
-            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
-            '</div>' +
-            '<div class="card" data-action="stuPortal" data-stu="lnr">' +
-            '<h2>Listen &amp; Repeat</h2>' +
-            '<p>跟读与智聆评测。</p>' +
-            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
-            '</div>' +
-            '<div class="card" data-action="stuPortal" data-stu="transcript">' +
-            '<h2>转写记录</h2>' +
-            '<p>保存语音转写片段。</p>' +
-            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
-            '</div>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">登录名即学生身份；录音结束后转写会同步教师端「Interview · 实时转写」（需在线登录）。</p>' +
             '</div>';
           bindStudentTopNav(root);
-          root.querySelectorAll('[data-action=stuPortal]').forEach(function (card) {
-            card.onclick = function () {
-              var st = card.getAttribute('data-stu');
-              if (st === 'real') {
-                state.studentNav = 'bank';
-                state.mainChoice = 'real';
-                state.practiceBank = null;
-                state.practiceBankLoading = false;
-                state.realTestMode = 'topic';
-                state.realTestCategoryId = null;
-                state.realTestIndex = 0;
-                state.realTestResult = null;
-                state.realTestError = '';
-                state.realWebSpeechLive = '';
-                state.realTencentLive = '';
-              } else if (st === 'tasks') {
-                state.mainChoice = 'studentTasks';
-                state.studentAssignments = null;
-                state.studentAssignmentsLoading = false;
-                state.studentListLoadError = '';
-              } else if (st === 'lnr') {
-                window.location.href = listenRepeatUrl();
-                return;
-              } else if (st === 'transcript') {
-                state.mainChoice = 'transcriptLog';
-              }
-              render();
-            };
-          });
-          root.querySelector('[data-action=logout]').onclick = function () {
-            clearCurrentUser();
-            stopStudentReadTimer();
-            state.view = 'list';
-            state.mainChoice = null;
-            state.studentNav = 'home';
-            state.mockPart = null;
-            render();
-          };
           return;
         }
 
@@ -2013,7 +2228,7 @@
           root.innerHTML = `
             <div class="header"><h1>Interview · 实时转写</h1><div class="header-right"><button data-action="backTL">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库练习」或 Interview 作业中<strong>正在录音</strong>；本页约每 1.5 秒拉取一次最新文本。</p>
+              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库练习」或 Interview 作业中录音；停止录音后会<strong>上报最终转写</strong>，本页约每 1.5 秒拉取一次。若部署多实例无共享内存，教师可能看不到内容，需单实例或后续接数据库。</p>
               <label for="tlStudent">学生注册用户名</label>
               <input type="text" id="tlStudent" class="fill-input" style="margin-top:0.35rem;margin-bottom:0.75rem" placeholder="与学生登录名一致" value="${escapeHtml(liveStu)}">
               <button type="button" class="primary" id="tlStart">开始监听</button>
@@ -2523,8 +2738,10 @@
               });
           }
           var sList = state.studentAssignments;
-          root.innerHTML = `
-            <div class="header"><h1>我的作业</h1><div class="header-right"><button data-action="backSM">返回</button> ${headerRight()}</div></div>
+          root.innerHTML =
+            studentTopNavHtml() +
+            `
+            <div class="header"><h1>我的作业</h1><div class="header-right"><button data-action="backSM">返回</button></div></div>
             ${state.studentAssignmentsLoading ? '<div class="card"><p>加载中…</p></div>' : ''}
             ${state.studentListLoadError ? '<div class="card"><p style="color:var(--wrong)">' + escapeHtml(state.studentListLoadError) + '</p></div>' : ''}
             ${(!state.studentAssignmentsLoading && Array.isArray(sList) && !sList.length) ? '<div class="card"><p style="color:var(--muted)">暂无教师下发的任务</p></div>' : ''}
@@ -2533,10 +2750,12 @@
               return '<div class="card" style="cursor:pointer" data-open-assign="' + escapeHtml(a.id) + '"><h2>' + escapeHtml(a.title || '任务') + '</h2><p style="color:var(--muted);font-size:0.9rem">' + prog + '</p></div>';
             }).join('') : ''}
           `;
+          bindStudentTopNav(root);
           root.querySelector('[data-action=backSM]').onclick = function () {
             state.mainChoice = null;
             state.studentAssignments = null;
             state.studentListLoadError = '';
+            state.studentNav = 'home';
             render();
           };
           root.querySelectorAll('[data-open-assign]').forEach(function (el) {
@@ -3308,21 +3527,16 @@
 
           var isInterviewQ = cur.mode !== 'listenRepeat';
           var liveTransHtml = '';
-          if (!completed && isInterviewQ && !(PORTAL === 'student' && state.realTestRecording)) {
+          if (!completed && isInterviewQ && PORTAL !== 'student') {
             liveTransHtml =
-              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3><p style="color:var(--muted);font-size:0.85rem">' +
-              (PORTAL === 'student'
-                ? '停止录音后显示；在线登录时同步教师端「Interview · 实时转写」。'
-                : '在线登录时同步教师端「Interview · 实时转写」。') +
+              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3><p style="color:var(--muted);font-size:0.85rem">在线登录时同步教师端「Interview · 实时转写」。' +
               '</p>' +
               '<div id="realWebSpeechBox" class="transcript-box">' +
-              (escapeHtml(state.realWebSpeechLive || '') ||
-                (PORTAL === 'student' ? '（停止录音后显示）' : '（开始录音后显示）')) +
+              (escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示）') +
               '</div></div>' +
               '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3><p style="color:var(--muted);font-size:0.85rem">需 server 配置 TENCENT_ASR_*。</p>' +
               '<div id="realTencentBox" class="transcript-box">' +
-              (escapeHtml(state.realTencentLive || '') ||
-                (PORTAL === 'student' ? '（停止录音后显示）' : '（录音中显示）')) +
+              (escapeHtml(state.realTencentLive || '') || '（录音中显示）') +
               '</div></div>';
           }
 
@@ -3536,6 +3750,7 @@
                     if (e.data && e.data.size > 0) realRecorderChunks.push(e.data);
                   };
                   realRecorder.onstop = function () {
+                    if (PORTAL === 'student') pushInterviewTranscriptFinal(state._studentLiveMeta);
                     stopTencentRealtimeAsr();
                     stopRealPracticeSpeech();
                     if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
@@ -3929,8 +4144,8 @@
           var stuCloudHint =
             PORTAL === 'student'
               ? getInterviewGradingApproved()
-                ? '<p style="color:var(--correct);font-size:0.9rem;margin-top:0.5rem">你已开通 Interview 云端评测：停止录音后将经服务器做 ASR+批改。</p>'
-                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，停止录音后将尝试云端评测；录音过程中不显示实时转写。</p>'
+                ? '<p style="color:var(--correct);font-size:0.9rem;margin-top:0.5rem">你已开通 Interview 云端评测：停止录音后将经服务器做 ASR+批改；转写将同步教师端。</p>'
+                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，停止录音后将尝试云端评测；录音结束后转写会同步教师端（不展示转写界面）。</p>'
               : '';
           var stuPrompt =
             PORTAL === 'student'
@@ -3939,26 +4154,8 @@
               : '请根据下面的提示，用英文作答（45 秒左右），点击「开始录音」后开始说，结束后系统会把音频上传到后端做 ASR + 口语评测。';
 
           var transcriptBlockReal;
-          if (PORTAL === 'student' && recording) {
+          if (PORTAL === 'student') {
             transcriptBlockReal = '';
-          } else if (PORTAL === 'student') {
-            transcriptBlockReal =
-              '<div class="card">' +
-              '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3>' +
-              '<p style="color:var(--muted);font-size:0.85rem">停止录音后显示；可加入转写记录。</p>' +
-              '<div id="realWebSpeechBox" class="transcript-box">' +
-              (escapeHtml(state.realWebSpeechLive || '') || '（停止录音后显示）') +
-              '</div>' +
-              '<button type="button" class="primary" style="margin-top:0.5rem" id="btnRealSaveTranscript">将当前转写加入记录</button>' +
-              '</div>' +
-              '<div class="card">' +
-              '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>' +
-              '<p style="color:var(--muted);font-size:0.85rem">停止录音后显示；需在 server 配置 <code>TENCENT_ASR_*</code>。</p>' +
-              '<div id="realTencentBox" class="transcript-box">' +
-              (escapeHtml(state.realTencentLive || '') || '（停止录音后显示）') +
-              '</div>' +
-              '<button type="button" class="primary" style="margin-top:0.5rem" id="btnTencentSaveTranscript">将腾讯云转写加入记录</button>' +
-              '</div>';
           } else {
             transcriptBlockReal =
               '<div class="card">' +
@@ -4129,6 +4326,7 @@
                     if (e.data && e.data.size > 0) realRecorderChunks.push(e.data);
                   };
                   realRecorder.onstop = function () {
+                    if (PORTAL === 'student') pushInterviewTranscriptFinal(state._studentLiveMeta);
                     stopTencentRealtimeAsr();
                     stopRealPracticeSpeech();
                     if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
