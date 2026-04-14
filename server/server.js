@@ -361,6 +361,102 @@ app.post('/api/teacher/interview-live-transcript', async (req, res) => {
   }
 });
 
+/** 北京时间「今天」0 点～次日 0 点（与 TIMESTAMPTZ 比较用 ISO） */
+function getShanghaiDayBoundsUtc() {
+  const tz = 'Asia/Shanghai';
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const parts = fmt.formatToParts(now);
+  const y = parts.find((p) => p.type === 'year').value;
+  const m = parts.find((p) => p.type === 'month').value;
+  const d = parts.find((p) => p.type === 'day').value;
+  const dayStr = `${y}-${m}-${d}`;
+  const start = new Date(`${dayStr}T00:00:00+08:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { startISO: start.toISOString(), endISO: end.toISOString(), label: dayStr };
+}
+
+function previewEvalDataText(ed) {
+  if (!ed || typeof ed !== 'object') return '';
+  const o = ed;
+  const s =
+    (o.correctedTranscript && String(o.correctedTranscript).trim()) ||
+    (o.transcript && String(o.transcript).trim()) ||
+    (o.asrPlainNoPunct && String(o.asrPlainNoPunct).trim()) ||
+    '';
+  if (s) return s.slice(0, 12000);
+  try {
+    return JSON.stringify(o).slice(0, 800);
+  } catch (_) {
+    return '';
+  }
+}
+
+/**
+ * 教师查看「今天」（北京时间）内、本人布置任务下所有学生的作业提交（来自 student_submissions，与保存同步）。
+ * POST body: teacherUsername, password
+ */
+app.post('/api/teacher/today-submissions', async (req, res) => {
+  try {
+    const { teacherUsername, password } = req.body || {};
+    const t = String(teacherUsername || '').trim();
+    const pwd = String(password || '');
+    if (!t || !pwd) return res.status(400).json({ ok: false, message: '需要 teacherUsername 与 password' });
+    const { data: teacher, error: te } = await supabase
+      .from('users')
+      .select('username, password, role')
+      .eq('username', t)
+      .maybeSingle();
+    if (te || !teacher) return res.status(401).json({ ok: false, message: '教师账号不存在' });
+    if ((teacher.role || 'student') !== 'teacher') return res.status(403).json({ ok: false, message: '仅教师可查看' });
+    if (teacher.password !== pwd) return res.status(401).json({ ok: false, message: '密码错误' });
+
+    const { data: assignRows, error: aErr } = await supabase.from('assignments').select('id, title').eq('teacher_username', t);
+    if (aErr) {
+      console.error(aErr);
+      return res.status(500).json({ ok: false, message: '查询任务失败' });
+    }
+    const assignments = assignRows || [];
+    const idToTitle = {};
+    const ids = [];
+    assignments.forEach((a) => {
+      idToTitle[a.id] = a.title || '';
+      ids.push(a.id);
+    });
+    const { startISO, endISO, label } = getShanghaiDayBoundsUtc();
+    if (!ids.length) {
+      return res.json({ ok: true, dayLabel: label, records: [] });
+    }
+
+    const { data: subs, error: sErr } = await supabase
+      .from('student_submissions')
+      .select('assignment_id, student_username, question_id, eval_data, submitted_at')
+      .in('assignment_id', ids)
+      .gte('submitted_at', startISO)
+      .lt('submitted_at', endISO)
+      .order('submitted_at', { ascending: false })
+      .limit(300);
+    if (sErr) {
+      console.error(sErr);
+      return res.status(500).json({ ok: false, message: '查询提交记录失败' });
+    }
+
+    const records = (subs || []).map((s) => ({
+      assignmentId: s.assignment_id,
+      assignmentTitle: idToTitle[s.assignment_id] || '',
+      studentUsername: s.student_username,
+      questionId: s.question_id,
+      submittedAt: s.submitted_at,
+      textPreview: previewEvalDataText(s.eval_data),
+    }));
+
+    res.json({ ok: true, dayLabel: label, records });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
 // 学生自助注册（门户：用户名即身份，与教师布置时填写的学生姓名一致）
 app.post('/api/auth/register-student', async (req, res) => {
   try {

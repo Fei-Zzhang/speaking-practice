@@ -508,8 +508,6 @@
         teacherAssignmentDetail: null,
         teacherAssignmentLoading: false,
         teacherAssignmentError: '',
-        /** 教师端「Interview 实时转写」监听的学生名 */
-        teacherLiveStudent: '',
         studentAssignmentsLoading: false,
         studentListLoadError: '',
         studentAssignments: null,
@@ -542,7 +540,7 @@
       let studentReadTimerId = null;
       let studentReadKickTimeoutId = null;
       let teacherAssignmentRefreshTimerId = null;
-      let teacherLivePollTimer = null;
+      let teacherTodayPollTimer = null;
       let realRecorder = null;
       let realRecorderStream = null;
       let realRecorderChunks = [];
@@ -626,10 +624,10 @@
           })
         }).catch(function () {});
       }
-      function clearTeacherLivePoll() {
-        if (teacherLivePollTimer) {
-          clearInterval(teacherLivePollTimer);
-          teacherLivePollTimer = null;
+      function clearTeacherTodayPoll() {
+        if (teacherTodayPollTimer) {
+          clearInterval(teacherTodayPollTimer);
+          teacherTodayPollTimer = null;
         }
       }
 
@@ -1455,8 +1453,8 @@
         const root = document.getElementById('root');
         const section = sections.find(s => s.id === state.sectionId);
         const currentUser = getCurrentUser();
-        if (state.mainChoice !== 'teacherLiveTranscript') {
-          clearTeacherLivePoll();
+        if (state.mainChoice !== 'teacherTodaySubmissions') {
+          clearTeacherTodayPoll();
         }
         // 刷新后恢复视图：仅教师可回到「模块选择」；学生始终为作业首页
         if (currentUser) {
@@ -2196,9 +2194,9 @@
                 <p>按学生<strong>注册用户名</strong>开通或关闭 Interview 云端 ASR+批改（作业与自主练习）。Listen &amp; Repeat 无需开通。</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
-              <div class="card" data-action="main" data-choice="teacherLiveTranscript">
-                <h2>Interview · 实时转写</h2>
-                <p>输入学生<strong>注册用户名</strong>，查看其题库练习或作业录音时的<strong>实时转写</strong>（学生须在线登录并正在说话）。</p>
+              <div class="card" data-action="main" data-choice="teacherTodaySubmissions">
+                <h2>今日作业提交</h2>
+                <p>自动列出<strong>今天内</strong>学生已保存的 Interview 作业提交（转写/批改文本来自数据库，无需输入姓名）。</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
             </div>
@@ -2224,9 +2222,6 @@
                 state.teacherLRNums = state.teacherLRNums || '';
                 state.teacherAssignTitle = state.teacherAssignTitle || '';
                 state.teacherAssignStudents = state.teacherAssignStudents || '';
-              }
-              if (state.mainChoice === 'teacherLiveTranscript') {
-                state.teacherLiveStudent = state.teacherLiveStudent || '';
               }
               render();
             };
@@ -2259,105 +2254,133 @@
             '<div class="card">' +
             '<div class="student-home-placeholder">Logo（预留）</div>' +
             '<div class="student-cover-placeholder">封面图（预留）</div>' +
-            '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">登录名即学生身份；录音结束后转写会同步教师端「Interview · 实时转写」（需在线登录）。</p>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">登录名即学生身份；作业保存后，教师可在「今日作业提交」查看当天记录（需在线登录与后端）。</p>' +
             '</div>';
           bindStudentTopNav(root);
           return;
         }
 
-        // ---------- 教师：Interview 实时转写（学生端上报 → 轮询）----------
-        if (state.mainChoice === 'teacherLiveTranscript') {
-          clearTeacherLivePoll();
-          var liveStu = state.teacherLiveStudent || '';
-          var livePwd = getSessionPassword();
+        // ---------- 教师：今日作业提交（student_submissions，按北京时间当天）----------
+        if (state.mainChoice === 'teacherTodaySubmissions') {
+          clearTeacherTodayPoll();
+          var ttPwd = getSessionPassword();
           root.innerHTML = `
-            <div class="header"><h1>Interview · 实时转写</h1><div class="header-right"><button data-action="backTL">返回</button> ${headerRight()}</div></div>
+            <div class="header"><h1>今日作业提交</h1><div class="header-right"><button data-action="backTT">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库 → Interview」或 Interview 作业中录音；停止录音且<strong>有识别文本</strong>后才会上报。本页约每 1.5 秒拉取一次。Supabase 须已执行 <code>server/supabase-interview-live-transcript.sql</code>，且<strong>Render 上环境变量 SUPABASE_URL / SUPABASE_SERVICE_KEY 必须与执行 SQL 的 Supabase 项目一致</strong>。</p>
-              <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0.75rem">排查：打开 <a href="${escapeHtml(API_NODE)}/api/health?checkDb=1" target="_blank" rel="noopener">健康检查（含数据库表）</a>，应看到 <code>interview_live_transcripts.ok: true</code>；若为 false，看返回的 error 字段。</p>
-              <label for="tlStudent">学生注册用户名</label>
-              <input type="text" id="tlStudent" class="fill-input" style="margin-top:0.35rem;margin-bottom:0.75rem" placeholder="与学生登录名一致" value="${escapeHtml(liveStu)}">
-              <button type="button" class="primary" id="tlStart">开始监听</button>
-              <p id="tlErr" style="color:var(--wrong);margin-top:0.75rem;display:none"></p>
-              <div id="tlMeta" style="color:var(--muted);font-size:0.85rem;margin-top:0.75rem"></div>
-              <div id="tlBox" class="transcript-box" style="margin-top:0.75rem">（开始监听后显示；若学生未说话或未上报，可能为空）</div>
+              <p style="color:var(--muted);margin-bottom:0.75rem">列出<strong>北京时间当天</strong>内，您布置的任务中学生已<strong>保存提交</strong>的记录（含转写/批改文本）。数据来自数据库 <code>student_submissions</code>，学生每次提交作业即写入。本页约每 8 秒自动刷新，也可手动点「刷新」。</p>
+              <p style="margin-bottom:0.75rem">
+                <button type="button" class="primary" id="ttRefresh">刷新</button>
+              </p>
+              <p id="ttErr" style="color:var(--wrong);display:none"></p>
+              <div id="ttMeta" style="color:var(--muted);font-size:0.85rem;margin-bottom:0.5rem">加载中…</div>
+              <div id="ttList"></div>
             </div>
           `;
-          root.querySelector('[data-action=backTL]').onclick = function () {
-            clearTeacherLivePoll();
+          root.querySelector('[data-action=backTT]').onclick = function () {
+            clearTeacherTodayPoll();
             state.mainChoice = null;
             render();
           };
           root.querySelector('[data-action=logout]').onclick = function () {
-            clearTeacherLivePoll();
+            clearTeacherTodayPoll();
             clearCurrentUser();
             state.mainChoice = null;
             state.view = 'list';
             render();
           };
-          if (!API_NODE || !livePwd) {
-            var errEl0 = document.getElementById('tlErr');
+          function renderTodayList(data) {
+            var meta = document.getElementById('ttMeta');
+            var listEl = document.getElementById('ttList');
+            var err = document.getElementById('ttErr');
+            if (!data || !data.ok) {
+              if (err) {
+                err.style.display = 'block';
+                err.textContent = (data && data.message) ? data.message : '加载失败';
+              }
+              if (meta) meta.textContent = '';
+              return;
+            }
+            if (err) err.style.display = 'none';
+            if (meta) {
+              meta.textContent =
+                '日期：' +
+                (data.dayLabel || '-') +
+                ' · 共 ' +
+                ((data.records && data.records.length) || 0) +
+                ' 条';
+            }
+            var rows = data.records || [];
+            if (!listEl) return;
+            if (!rows.length) {
+              listEl.innerHTML =
+                '<p style="color:var(--muted)">今日暂无提交记录。</p>';
+              return;
+            }
+            listEl.innerHTML = rows
+              .map(function (r) {
+                var t = r.submittedAt ? new Date(r.submittedAt).toLocaleString() : '';
+                var prev = (r.textPreview || '').trim() || '（无文本预览）';
+                return (
+                  '<div class="card" style="margin-top:0.75rem">' +
+                  '<div style="font-size:0.85rem;color:var(--muted)">' +
+                  escapeHtml(t) +
+                  ' · 学生 <strong>' +
+                  escapeHtml(r.studentUsername || '') +
+                  '</strong></div>' +
+                  '<div style="margin-top:0.35rem;font-size:0.9rem">任务：' +
+                  escapeHtml(r.assignmentTitle || '') +
+                  ' · 题目：' +
+                  escapeHtml(r.questionId || '') +
+                  '</div>' +
+                  '<div class="transcript-box" style="margin-top:0.5rem">' +
+                  escapeHtml(prev) +
+                  '</div>' +
+                  '</div>'
+                );
+              })
+              .join('');
+          }
+          var pollFn = function () {
+            if (!API_NODE || !ttPwd) return;
+            fetch(API_NODE + '/api/teacher/today-submissions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                teacherUsername: currentUser,
+                password: getSessionPassword()
+              })
+            })
+              .then(function (r) {
+                return r.json();
+              })
+              .then(renderTodayList)
+              .catch(function () {
+                var err = document.getElementById('ttErr');
+                var meta = document.getElementById('ttMeta');
+                if (meta) meta.textContent = '';
+                if (err) {
+                  err.style.display = 'block';
+                  err.textContent = '无法连接后端';
+                }
+              });
+          };
+          if (!API_NODE || !ttPwd) {
+            var errEl0 = document.getElementById('ttErr');
+            var meta0 = document.getElementById('ttMeta');
+            if (meta0) meta0.textContent = '';
             if (errEl0) {
               errEl0.style.display = 'block';
-              errEl0.textContent = !livePwd
-                ? '请使用在线登录教师账号（离线登录无法拉取实时转写）。'
+              errEl0.textContent = !ttPwd
+                ? '请使用在线登录教师账号（离线登录无法拉取提交记录）。'
                 : '未配置 API 地址';
             }
           } else {
-            var pollFn = function () {
-              var inp = document.getElementById('tlStudent');
-              var st = (inp && inp.value ? inp.value : liveStu || '').trim();
-              if (!st) return;
-              state.teacherLiveStudent = st;
-              fetch(API_NODE + '/api/teacher/interview-live-transcript', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  teacherUsername: currentUser,
-                  password: getSessionPassword(),
-                  studentUsername: st
-                })
-              })
-                .then(function (r) {
-                  return r.json();
-                })
-                .then(function (data) {
-                  var err = document.getElementById('tlErr');
-                  var meta = document.getElementById('tlMeta');
-                  var box = document.getElementById('tlBox');
-                  if (!data || !data.ok) {
-                    if (err) {
-                      err.style.display = 'block';
-                      err.textContent = (data && data.message) ? data.message : '拉取失败';
-                    }
-                    return;
-                  }
-                  if (err) err.style.display = 'none';
-                  if (meta && data.live) {
-                    meta.textContent =
-                      '来源：' +
-                      (data.live.source || '-') +
-                      ' · 更新时间：' +
-                      new Date(data.live.updatedAt).toLocaleString();
-                  } else if (meta) {
-                    meta.textContent = '学生尚未上报转写（未在录音或会话未同步）。';
-                  }
-                  if (box) box.textContent = (data.live && data.live.text) || '（暂无）';
-                })
-                .catch(function () {
-                  var err = document.getElementById('tlErr');
-                  if (err) {
-                    err.style.display = 'block';
-                    err.textContent = '无法连接后端';
-                  }
-                });
-            };
-            var btnStart = document.getElementById('tlStart');
-            if (btnStart) {
-              btnStart.onclick = function () {
-                clearTeacherLivePoll();
+            pollFn();
+            teacherTodayPollTimer = setInterval(pollFn, 8000);
+            var btnRefresh = document.getElementById('ttRefresh');
+            if (btnRefresh) {
+              btnRefresh.onclick = function () {
                 pollFn();
-                teacherLivePollTimer = setInterval(pollFn, 1500);
               };
             }
           }
