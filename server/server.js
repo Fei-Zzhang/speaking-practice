@@ -217,13 +217,30 @@ app.post('/api/student/interview-live-transcript', async (req, res) => {
     if ((user.role || 'student') !== 'student') return res.status(403).json({ ok: false, message: '仅学生可上报' });
     if (user.password !== pwd) return res.status(401).json({ ok: false, message: '密码错误' });
     const t = String(text || '');
-    liveInterviewTranscripts.set(uname, {
+    const row = {
       text: t.slice(0, 120000),
       source: String(source || '').slice(0, 32),
       assignmentId: assignmentId ? String(assignmentId).slice(0, 64) : '',
       questionId: questionId ? String(questionId).slice(0, 128) : '',
       updatedAt: Date.now(),
-    });
+    };
+    liveInterviewTranscripts.set(uname, row);
+    try {
+      const { error: upErr } = await supabase.from('interview_live_transcripts').upsert(
+        {
+          student_username: uname,
+          text: row.text,
+          source: row.source || null,
+          assignment_id: row.assignmentId || null,
+          question_id: row.questionId || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'student_username' }
+      );
+      if (upErr) console.warn('[interview-live-transcript] supabase upsert:', formatSupabaseError(upErr));
+    } catch (e) {
+      console.warn('[interview-live-transcript] supabase upsert failed', e);
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -262,7 +279,29 @@ app.post('/api/teacher/interview-live-transcript', async (req, res) => {
     if (suErr || !stu) return res.status(404).json({ ok: false, message: '学生不存在' });
     if ((stu.role || 'student') !== 'student') return res.status(403).json({ ok: false, message: '仅可查看学生账号' });
 
-    const live = liveInterviewTranscripts.get(studentUsername) || null;
+    let live = liveInterviewTranscripts.get(studentUsername) || null;
+    try {
+      const { data: dbRow, error: dbErr } = await supabase
+        .from('interview_live_transcripts')
+        .select('text, source, assignment_id, question_id, updated_at')
+        .eq('student_username', studentUsername)
+        .maybeSingle();
+      if (!dbErr && dbRow && dbRow.updated_at) {
+        const dbMs = new Date(dbRow.updated_at).getTime();
+        const memMs = live && live.updatedAt ? live.updatedAt : 0;
+        if (!live || dbMs >= memMs) {
+          live = {
+            text: dbRow.text || '',
+            source: dbRow.source || '',
+            assignmentId: dbRow.assignment_id || '',
+            questionId: dbRow.question_id || '',
+            updatedAt: dbMs,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[teacher interview-live-transcript] db read', e);
+    }
     res.json({
       ok: true,
       live: live

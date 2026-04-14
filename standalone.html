@@ -224,6 +224,7 @@
 
       function getStudentNavActive() {
         if (PORTAL !== 'student') return 'home';
+        if (state.mainChoice === 'studentBankPick') return 'bank';
         if (state.mainChoice === 'real') return 'bank';
         if (state.mainChoice === 'studentMaterial') return 'practice';
         if (
@@ -245,11 +246,7 @@
           return '<button type="button" class="' + cl + '" data-student-nav="' + id + '">' + label + '</button>';
         }
         var u = getCurrentUser();
-        var navBtns =
-          btn('home', '首页') +
-          (u ? btn('login', '账号') : '') +
-          btn('bank', '题库') +
-          btn('practice', '练习');
+        var navBtns = btn('home', '首页') + btn('bank', '题库') + btn('practice', '练习');
         var right;
         if (u) {
           var initial = String(u).trim().charAt(0) || '?';
@@ -284,7 +281,12 @@
             var id = b.getAttribute('data-student-nav');
             state.studentNav = id;
             if (id === 'bank') {
-              state.mainChoice = 'real';
+              state.studentNav = 'bank';
+              if (getCurrentUser()) {
+                state.mainChoice = 'studentBankPick';
+              } else {
+                state.mainChoice = null;
+              }
               state.practiceBank = null;
               state.practiceBankLoading = false;
               state.realTestMode = 'topic';
@@ -1695,6 +1697,55 @@
           return;
         }
 
+        // 学生端 · 已登录：题库 → LNR / Interview 二选一
+        if (PORTAL === 'student' && state.mainChoice === 'studentBankPick' && currentUser) {
+          root.innerHTML =
+            studentTopNavHtml() +
+            '<div class="header"><h1>题库</h1><div class="header-right"><button type="button" data-action="backBankHubHome">返回首页</button></div></div>' +
+            '<p style="color:var(--muted);margin-bottom:1rem">请选择练习体系：Listen &amp; Repeat 为原跟读页面；Interview 为口语题库。</p>' +
+            '<div class="main-choice">' +
+            '<div class="card" data-action="stuPickLnr">' +
+            '<h2>Listen &amp; Repeat</h2>' +
+            '<p>跟读与智聆评测。进入原有 LNR 页面，浏览<strong>全套</strong>组句与练习。</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入 LNR</button>' +
+            '</div>' +
+            '<div class="card" data-action="stuPickInterview">' +
+            '<h2>Interview</h2>' +
+            '<p>口语 Interview 题库：按话题或设问方式分类，<strong>全套</strong>题目与录音评测。</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入 Interview</button>' +
+            '</div>' +
+            '</div>';
+          bindStudentTopNav(root);
+          root.querySelector('[data-action=backBankHubHome]').onclick = function () {
+            state.mainChoice = null;
+            state.studentNav = 'home';
+            render();
+          };
+          root.querySelector('[data-action=stuPickLnr]').onclick = function () {
+            window.location.href = listenRepeatUrl();
+          };
+          root.querySelector('[data-action=stuPickInterview]').onclick = function () {
+            state.mainChoice = 'real';
+            state.practiceBank = null;
+            state.practiceBankLoading = false;
+            state.realTestMode = 'topic';
+            state.realTestCategoryId = null;
+            state.realTestIndex = 0;
+            state.realTestResult = null;
+            state.realTestError = '';
+            state.realWebSpeechLive = '';
+            state.realTencentLive = '';
+            render();
+          };
+          return;
+        }
+        if (PORTAL === 'student' && state.mainChoice === 'studentBankPick' && !currentUser) {
+          state.mainChoice = null;
+          state.studentNav = 'bank';
+          render();
+          return;
+        }
+
         // 未登录：教师端 = 原登录页；学生端 = 顶栏 + 首页/登陆/题库
         if (!currentUser && PORTAL === 'teacher') {
           var portalLabel = PORTAL === 'teacher' ? '教师端' : '学生端';
@@ -2197,20 +2248,12 @@
           return;
         }
 
-        // 已登录：学生端首页（顶栏：首页 / 登陆 / 题库 / 练习）
+        // 已登录：学生端首页（顶栏：首页 / 题库 / 练习）
         if (state.view === 'list' && state.mainChoice === null && PORTAL === 'student') {
-          var stNav = studentTopNavHtml();
           if (state.studentNav === 'login') {
-            root.innerHTML =
-              stNav +
-              '<div class="card"><h2 style="margin:0 0 0.5rem">账号</h2><p>当前登录：<strong>' +
-              escapeHtml(currentUser) +
-              '</strong></p><p style="color:var(--muted);font-size:0.9rem;margin-top:0.75rem">Interview 云端批改：' +
-              (getInterviewGradingApproved() ? '已开通' : '未开通') +
-              '</p></div>';
-            bindStudentTopNav(root);
-            return;
+            state.studentNav = 'home';
           }
+          var stNav = studentTopNavHtml();
           root.innerHTML =
             stNav +
             '<div class="card">' +
@@ -2230,7 +2273,7 @@
           root.innerHTML = `
             <div class="header"><h1>Interview · 实时转写</h1><div class="header-right"><button data-action="backTL">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库练习」或 Interview 作业中录音；停止录音后会<strong>上报最终转写</strong>，本页约每 1.5 秒拉取一次。若部署多实例无共享内存，教师可能看不到内容，需单实例或后续接数据库。</p>
+              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库 → Interview」或 Interview 作业中录音；停止录音后会<strong>上报最终转写</strong>。本页约每 1.5 秒拉取一次。请在 Supabase 执行 <code>server/supabase-interview-live-transcript.sql</code> 建表后，转写会写入数据库，多实例部署也可查看。</p>
               <label for="tlStudent">学生注册用户名</label>
               <input type="text" id="tlStudent" class="fill-input" style="margin-top:0.35rem;margin-bottom:0.75rem" placeholder="与学生登录名一致" value="${escapeHtml(liveStu)}">
               <button type="button" class="primary" id="tlStart">开始监听</button>
@@ -3988,8 +4031,12 @@
             root.querySelector('[data-action=backMain]').onclick = function () {
               stopTencentRealtimeAsr();
               stopRealPracticeSpeech();
-              state.mainChoice = null;
-              if (PORTAL === 'student') state.studentNav = 'home';
+              if (PORTAL === 'student') {
+                state.mainChoice = 'studentBankPick';
+                state.studentNav = 'bank';
+              } else {
+                state.mainChoice = null;
+              }
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
               state.realTestIndex = 0;
@@ -4043,8 +4090,12 @@
             root.querySelector('[data-action=backMain]').onclick = function () {
               stopTencentRealtimeAsr();
               stopRealPracticeSpeech();
-              state.mainChoice = null;
-              if (PORTAL === 'student') state.studentNav = 'home';
+              if (PORTAL === 'student') {
+                state.mainChoice = 'studentBankPick';
+                state.studentNav = 'bank';
+              } else {
+                state.mainChoice = null;
+              }
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
               state.realTestIndex = 0;
@@ -4099,7 +4150,6 @@
               b.onclick = function () {
                 state.realTestCategoryId = null;
                 state.realTestIndex = 0;
-                if (PORTAL === 'student') state.studentNav = 'home';
                 render();
               };
             });
@@ -4221,7 +4271,6 @@
             state.realTestResult = null;
             state.realWebSpeechLive = '';
             state.realTencentLive = '';
-            if (PORTAL === 'student') state.studentNav = 'home';
             render();
           };
 
