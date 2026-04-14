@@ -2273,7 +2273,8 @@
           root.innerHTML = `
             <div class="header"><h1>Interview · 实时转写</h1><div class="header-right"><button data-action="backTL">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库 → Interview」或 Interview 作业中录音；停止录音后会<strong>上报最终转写</strong>。本页约每 1.5 秒拉取一次。请在 Supabase 执行 <code>server/supabase-interview-live-transcript.sql</code> 建表后，转写会写入数据库，多实例部署也可查看。</p>
+              <p style="color:var(--muted);margin-bottom:0.75rem">学生须<strong>在线登录</strong>并在「题库 → Interview」或 Interview 作业中录音；停止录音且<strong>有识别文本</strong>后才会上报。本页约每 1.5 秒拉取一次。Supabase 须已执行 <code>server/supabase-interview-live-transcript.sql</code>，且<strong>Render 上环境变量 SUPABASE_URL / SUPABASE_SERVICE_KEY 必须与执行 SQL 的 Supabase 项目一致</strong>。</p>
+              <p style="color:var(--muted);font-size:0.85rem;margin-bottom:0.75rem">排查：打开 <a href="${escapeHtml(API_NODE)}/api/health?checkDb=1" target="_blank" rel="noopener">健康检查（含数据库表）</a>，应看到 <code>interview_live_transcripts.ok: true</code>；若为 false，看返回的 error 字段。</p>
               <label for="tlStudent">学生注册用户名</label>
               <input type="text" id="tlStudent" class="fill-input" style="margin-top:0.35rem;margin-bottom:0.75rem" placeholder="与学生登录名一致" value="${escapeHtml(liveStu)}">
               <button type="button" class="primary" id="tlStart">开始监听</button>

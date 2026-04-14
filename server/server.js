@@ -145,6 +145,40 @@ async function getTencentStreamEligibility(username) {
 const liveInterviewTranscripts = new Map();
 const LIVE_TRANSCRIPT_TTL_MS = 15 * 60 * 1000;
 
+/** 持久化到 Supabase（与 Render 多实例 / 教师轮询读库一致） */
+async function persistInterviewTranscriptToDb(uname, row) {
+  const payload = {
+    student_username: uname,
+    text: row.text,
+    source: row.source ? String(row.source).slice(0, 128) : null,
+    assignment_id: row.assignmentId ? String(row.assignmentId).slice(0, 128) : null,
+    question_id: row.questionId ? String(row.questionId).slice(0, 256) : null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error: upErr } = await supabase.from('interview_live_transcripts').upsert(payload);
+  if (!upErr) return { ok: true };
+  console.warn('[interview-live-transcript] upsert:', formatSupabaseError(upErr));
+  const { data: updated, error: updErr } = await supabase
+    .from('interview_live_transcripts')
+    .update({
+      text: payload.text,
+      source: payload.source,
+      assignment_id: payload.assignment_id,
+      question_id: payload.question_id,
+      updated_at: payload.updated_at,
+    })
+    .eq('student_username', uname)
+    .select('student_username');
+  if (!updErr && updated && updated.length) return { ok: true };
+  if (updErr) console.warn('[interview-live-transcript] update:', formatSupabaseError(updErr));
+  const { error: insErr } = await supabase.from('interview_live_transcripts').insert(payload);
+  if (insErr) {
+    console.warn('[interview-live-transcript] insert:', formatSupabaseError(insErr));
+    return { ok: false, error: formatSupabaseError(insErr) };
+  }
+  return { ok: true };
+}
+
 function pruneLiveInterviewTranscripts() {
   const now = Date.now();
   for (const [k, v] of liveInterviewTranscripts) {
@@ -163,9 +197,22 @@ app.get('/', (req, res) => {
   res.send('<!DOCTYPE html><html><head><meta charset="utf-8"><title>口语练习后端</title></head><body><h1>口语练习后端已运行</h1><p>健康检查：<a href="/api/health">/api/health</a></p><p>前端请打开 <a href="http://localhost:8080/standalone.html">http://localhost:8080/standalone.html</a></p></body></html>');
 });
 
-// 健康检查
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, message: '口语练习后端运行中' });
+// 健康检查；加 ?checkDb=1 可验证 interview_live_transcripts 表是否可被服务端读写（需已执行 supabase-interview-live-transcript.sql）
+app.get('/api/health', async (req, res) => {
+  const out = { ok: true, message: '口语练习后端运行中' };
+  if (req.query.checkDb === '1') {
+    try {
+      const { error, count } = await supabase
+        .from('interview_live_transcripts')
+        .select('*', { count: 'exact', head: true });
+      out.interview_live_transcripts = error
+        ? { ok: false, error: formatSupabaseError(error) }
+        : { ok: true, rowCount: count != null ? count : 0 };
+    } catch (e) {
+      out.interview_live_transcripts = { ok: false, error: String(e && e.message) };
+    }
+  }
+  res.json(out);
 });
 
 /**
@@ -226,20 +273,12 @@ app.post('/api/student/interview-live-transcript', async (req, res) => {
     };
     liveInterviewTranscripts.set(uname, row);
     try {
-      const { error: upErr } = await supabase.from('interview_live_transcripts').upsert(
-        {
-          student_username: uname,
-          text: row.text,
-          source: row.source || null,
-          assignment_id: row.assignmentId || null,
-          question_id: row.questionId || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'student_username' }
-      );
-      if (upErr) console.warn('[interview-live-transcript] supabase upsert:', formatSupabaseError(upErr));
+      const dbRes = await persistInterviewTranscriptToDb(uname, row);
+      if (!dbRes.ok) {
+        console.warn('[interview-live-transcript] DB 未写入，教师端可能仍读不到。请确认 Supabase 已执行 sql、且 Render 的 SUPABASE_* 与执行 SQL 的项目一致。');
+      }
     } catch (e) {
-      console.warn('[interview-live-transcript] supabase upsert failed', e);
+      console.warn('[interview-live-transcript] persist failed', e);
     }
     res.json({ ok: true });
   } catch (err) {
@@ -286,7 +325,9 @@ app.post('/api/teacher/interview-live-transcript', async (req, res) => {
         .select('text, source, assignment_id, question_id, updated_at')
         .eq('student_username', studentUsername)
         .maybeSingle();
-      if (!dbErr && dbRow && dbRow.updated_at) {
+      if (dbErr) {
+        console.warn('[teacher interview-live-transcript] db select:', formatSupabaseError(dbErr));
+      } else if (dbRow && dbRow.updated_at) {
         const dbMs = new Date(dbRow.updated_at).getTime();
         const memMs = live && live.updatedAt ? live.updatedAt : 0;
         if (!live || dbMs >= memMs) {
