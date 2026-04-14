@@ -114,10 +114,10 @@ image.png<!DOCTYPE html>
           });
       }
 
-      /** 学生端统一登录（与 server 端 STUDENT_PORTAL_* 一致） */
-      const STUDENT_PORTAL_USERNAME = 'studentaccount';
-      const STUDENT_PORTAL_PASSWORD = '45678';
+      /** 学生作业匹配名曾单独存 session；现与登录名统一，仅作兼容旧会话 */
       const STUDENT_NAME_STORAGE_KEY = 'speaking_student_display_name';
+      const INTERVIEW_APPROVAL_KEY = 'speaking_interview_grading';
+      const TRANSCRIPT_LOG_KEY = 'speaking_transcript_log_v1';
 
       /** Listen & Repeat 子页面路径（文件夹名含 &，需编码） */
       function listenRepeatUrl() {
@@ -280,7 +280,11 @@ image.png<!DOCTYPE html>
         studentReadKickVersion: 0,
         /** 本套题总耗时（毫秒），仅 batch 流程 */
         studentBatchSessionStartMs: null,
-        studentBatchSessionEndMs: null
+        studentBatchSessionEndMs: null,
+        /** Interview 自主练习页：浏览器实时转写缓冲 */
+        realWebSpeechLive: '',
+        /** Interview：腾讯云实时流式转写缓冲（与 realWebSpeechLive 并列展示） */
+        realTencentLive: ''
       };
       let recognition = null;
       let timerId = null;
@@ -292,6 +296,215 @@ image.png<!DOCTYPE html>
       let realRecorderStream = null;
       let realRecorderChunks = [];
       let realCurrentRefText = '';
+      let realSpeechRecognition = null;
+
+      var tencentAsrCtx = null;
+      var tencentAsrProc = null;
+      var tencentAsrMute = null;
+      var tencentAsrWs = null;
+      var tencentAsrPcmAcc = [];
+      var tencentAsrFlushTimer = null;
+
+      function canUseTencentAsrStream() {
+        if (!API_NODE || !getCurrentUser()) return false;
+        if (PORTAL === 'teacher') return true;
+        if (PORTAL === 'student') return getInterviewGradingApproved();
+        return false;
+      }
+
+      function downsampleBuffer(buffer, inputSampleRate, outputSampleRate) {
+        if (inputSampleRate === outputSampleRate) return new Float32Array(buffer);
+        var ratio = inputSampleRate / outputSampleRate;
+        var length = Math.round(buffer.length / ratio);
+        var result = new Float32Array(length);
+        var offsetResult = 0;
+        var offsetBuffer = 0;
+        while (offsetResult < length) {
+          var nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+          var accum = 0;
+          var count = 0;
+          for (var i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+            accum += buffer[i];
+            count++;
+          }
+          result[offsetResult] = count > 0 ? accum / count : 0;
+          offsetResult++;
+          offsetBuffer = nextOffsetBuffer;
+        }
+        return result;
+      }
+
+      function floatTo16BitPCMBytes(float32Array) {
+        var buf = new ArrayBuffer(float32Array.length * 2);
+        var view = new DataView(buf);
+        for (var i = 0; i < float32Array.length; i++) {
+          var s = Math.max(-1, Math.min(1, float32Array[i]));
+          view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        }
+        return new Uint8Array(buf);
+      }
+
+      function stopTencentRealtimeAsr() {
+        if (tencentAsrFlushTimer) {
+          clearInterval(tencentAsrFlushTimer);
+          tencentAsrFlushTimer = null;
+        }
+        tencentAsrPcmAcc = [];
+        if (tencentAsrProc) {
+          try {
+            tencentAsrProc.disconnect();
+          } catch (_) {}
+          tencentAsrProc = null;
+        }
+        if (tencentAsrMute) {
+          try {
+            tencentAsrMute.disconnect();
+          } catch (_) {}
+          tencentAsrMute = null;
+        }
+        if (tencentAsrCtx) {
+          try {
+            tencentAsrCtx.close();
+          } catch (_) {}
+          tencentAsrCtx = null;
+        }
+        if (tencentAsrWs) {
+          try {
+            if (tencentAsrWs.readyState === 1) tencentAsrWs.send(JSON.stringify({ type: 'end' }));
+          } catch (_) {}
+          try {
+            tencentAsrWs.close();
+          } catch (_) {}
+          tencentAsrWs = null;
+        }
+      }
+
+      /** Interview 题库练习：浏览器直连腾讯云 ASR WebSocket，PCM 由本页重采样后推送（不经过 LNR） */
+      function startTencentRealtimeAsr(mediaStream, onUpdate, onErr) {
+        stopTencentRealtimeAsr();
+        if (!canUseTencentAsrStream()) return;
+        fetch(
+          API_NODE +
+            '/api/tencent-asr/sign?username=' +
+            encodeURIComponent(getStudentTaskName()) +
+            '&engine_model_type=16k_en'
+        )
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (data) {
+            if (!data || !data.ok || !data.url) {
+              if (onErr) onErr((data && data.message) || '无法获取实时识别签名');
+              return;
+            }
+            var ws = new WebSocket(data.url);
+            tencentAsrWs = ws;
+            ws.onmessage = function (ev) {
+              try {
+                var j = JSON.parse(ev.data);
+                if (j.code !== 0) {
+                  if (onErr) onErr(j.message || '实时识别错误');
+                  return;
+                }
+                if (j.result && j.result.voice_text_str != null && onUpdate) onUpdate(j.result.voice_text_str);
+              } catch (e) {}
+            };
+            ws.onerror = function () {
+              if (onErr) onErr('WebSocket 错误');
+            };
+            ws.onopen = function () {
+              try {
+                tencentAsrCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (tencentAsrCtx.state === 'suspended') {
+                  tencentAsrCtx.resume().catch(function () {});
+                }
+                var source = tencentAsrCtx.createMediaStreamSource(mediaStream);
+                var proc = tencentAsrCtx.createScriptProcessor(4096, 1, 1);
+                tencentAsrProc = proc;
+                proc.onaudioprocess = function (e) {
+                  var input = e.inputBuffer.getChannelData(0);
+                  var down = downsampleBuffer(input, tencentAsrCtx.sampleRate, 16000);
+                  var bytes = floatTo16BitPCMBytes(down);
+                  for (var i = 0; i < bytes.length; i++) tencentAsrPcmAcc.push(bytes[i]);
+                };
+                var mute = tencentAsrCtx.createGain();
+                mute.gain.value = 0;
+                tencentAsrMute = mute;
+                source.connect(proc);
+                proc.connect(mute);
+                mute.connect(tencentAsrCtx.destination);
+              } catch (err) {
+                if (onErr) onErr(err && err.message ? err.message : String(err));
+              }
+              tencentAsrFlushTimer = setInterval(function () {
+                if (!tencentAsrWs || tencentAsrWs.readyState !== 1) return;
+                var need = 6400;
+                if (tencentAsrPcmAcc.length < need) return;
+                var chunk = tencentAsrPcmAcc.splice(0, need);
+                var u8 = new Uint8Array(chunk);
+                tencentAsrWs.send(u8.buffer);
+              }, 200);
+            };
+          })
+          .catch(function () {
+            if (onErr) onErr('无法连接签名接口');
+          });
+      }
+
+      function blobToBase64(blob, cb) {
+        var r = new FileReader();
+        r.onload = function () {
+          var s = String(r.result || '');
+          var i = s.indexOf(',');
+          cb(i >= 0 ? s.slice(i + 1) : s);
+        };
+        r.onerror = function () {
+          cb('');
+        };
+        r.readAsDataURL(blob);
+      }
+
+      function stopRealPracticeSpeech() {
+        if (realSpeechRecognition) {
+          try {
+            realSpeechRecognition.stop();
+          } catch (_) {}
+          realSpeechRecognition = null;
+        }
+      }
+
+      function appendTranscriptLog(text, meta) {
+        try {
+          var arr = JSON.parse(sessionStorage.getItem(TRANSCRIPT_LOG_KEY) || '[]');
+          if (!Array.isArray(arr)) arr = [];
+          arr.unshift({ t: Date.now(), text: String(text || ''), meta: meta || {} });
+          if (arr.length > 200) arr = arr.slice(0, 200);
+          sessionStorage.setItem(TRANSCRIPT_LOG_KEY, JSON.stringify(arr));
+        } catch (e) {}
+      }
+
+      function getTranscriptLogs() {
+        try {
+          var arr = JSON.parse(sessionStorage.getItem(TRANSCRIPT_LOG_KEY) || '[]');
+          return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function getInterviewGradingApproved() {
+        try {
+          return sessionStorage.getItem(INTERVIEW_APPROVAL_KEY) === '1';
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function setInterviewGradingApproved(v) {
+        try {
+          sessionStorage.setItem(INTERVIEW_APPROVAL_KEY, v ? '1' : '0');
+        } catch (_) {}
+      }
 
       // 发音不准确阈值：低于此分的单词会明确列出为「发音不准确」
       var PRON_WEAK_THRESHOLD = 85;
@@ -486,10 +699,19 @@ image.png<!DOCTYPE html>
           sessionStorage.removeItem(AUTH_ROLE_KEY);
           sessionStorage.removeItem('speaking_view');
           sessionStorage.removeItem(STUDENT_NAME_STORAGE_KEY);
+          sessionStorage.removeItem(INTERVIEW_APPROVAL_KEY);
         } catch (_) {}
       }
       function getStudentTaskName() {
-        try { return (sessionStorage.getItem(STUDENT_NAME_STORAGE_KEY) || '').trim(); } catch (_) { return ''; }
+        try {
+          if (PORTAL === 'student') {
+            var u = getCurrentUser();
+            if (u) return String(u).trim();
+          }
+          return (sessionStorage.getItem(STUDENT_NAME_STORAGE_KEY) || '').trim();
+        } catch (_) {
+          return '';
+        }
       }
       function setStudentTaskName(s) {
         try { sessionStorage.setItem(STUDENT_NAME_STORAGE_KEY, (s || '').trim()); } catch (_) {}
@@ -954,12 +1176,16 @@ image.png<!DOCTYPE html>
             ? '<label for="loginTeacherCode">教师注册口令（首次注册教师账号必填，在 server/.env 配置 TEACHER_REGISTER_SECRET）</label><input type="password" id="loginTeacherCode" placeholder="口令" autocomplete="off">'
             : '';
           var studentLoginNote = PORTAL === 'student'
-            ? ''
+            ? '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">首次使用请先<strong>注册</strong>（用户名即身份，教师布置作业时「学生姓名」须与此一致）。</p>'
             : '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">入口：<code>?portal=student</code> 或 <code>?portal=teacher</code>；学生与教师账号不可混用入口。</p>';
           var nameField = PORTAL === 'student'
-            ? '<label for="loginName">账号（固定）</label><input type="text" id="loginName" value="' + escapeHtml(STUDENT_PORTAL_USERNAME) + '" readonly style="opacity:0.9;cursor:not-allowed" autocomplete="username">'
+            ? '<label for="loginName">用户名</label><input type="text" id="loginName" placeholder="注册时使用的用户名" autocomplete="username">'
             : '<label for="loginName">学号 / 用户名</label><input type="text" id="loginName" placeholder="请输入学号或用户名" autocomplete="username">';
-          var pwdPlaceholder = PORTAL === 'student' ? '请输入统一密码' : '密码';
+          var pwdPlaceholder = PORTAL === 'student' ? '密码' : '密码';
+          var studentRegisterBlock =
+            PORTAL === 'student'
+              ? '<div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)"><h3 style="font-size:1rem;margin:0 0 0.5rem">注册新账号</h3><label for="regName">用户名</label><input type="text" id="regName" class="fill-input" style="margin-top:0.35rem" placeholder="2～48 字，中文/字母/数字/._-" autocomplete="off"><label for="regPwd" style="margin-top:0.75rem;display:block">密码</label><input type="password" id="regPwd" placeholder="至少 4 位" autocomplete="new-password"><button type="button" class="primary" style="margin-top:0.75rem" id="btnRegisterStudent">注册</button></div>'
+              : '';
           root.innerHTML = `
             <div class="header"><h1>口语练习 · ${portalLabel}</h1></div>
             <div class="card login-card">
@@ -972,15 +1198,62 @@ image.png<!DOCTYPE html>
               ${teacherCodeRow}
               <button type="button" class="primary btn-login" id="btnLogin">登录</button>
               <button type="button" class="btn-login" id="btnOffline">离线登录（不连接后端）</button>
+              ${studentRegisterBlock}
               ${PORTAL === 'teacher'
                 ? '<p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">登录与任务走 Node 后端（${escapeHtml(API_NODE)}），评测走 Python（${escapeHtml(API_PYTHON)}）。</p>'
-                : ''}
+                : '<p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">账号数据存于 Node（' + escapeHtml(API_NODE) + '）；部署后请在 Supabase 执行 <code>supabase-portal-student-v1.sql</code>。</p>'}
             </div>
           `;
+          var btnReg = document.getElementById('btnRegisterStudent');
+          if (btnReg) {
+            btnReg.onclick = function () {
+              var rn = (document.getElementById('regName') && document.getElementById('regName').value || '').trim();
+              var rp = (document.getElementById('regPwd') && document.getElementById('regPwd').value || '').trim();
+              if (!rn || !rp) {
+                alert('请填写注册用户名与密码');
+                return;
+              }
+              if (!API_NODE) {
+                alert('未配置 API_NODE，无法注册');
+                return;
+              }
+              btnReg.disabled = true;
+              fetch(API_NODE + '/api/auth/register-student', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: rn, password: rp })
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  btnReg.disabled = false;
+                  if (data && data.ok) {
+                    alert('注册成功，请用该用户名登录。');
+                    var ln = document.getElementById('loginName');
+                    var lp = document.getElementById('loginPwd');
+                    if (ln) ln.value = rn;
+                    if (lp) lp.value = rp;
+                  } else {
+                    alert((data && data.message) || '注册失败');
+                  }
+                })
+                .catch(function () {
+                  btnReg.disabled = false;
+                  alert('无法连接后端');
+                });
+            };
+          }
           document.getElementById('btnOffline').onclick = function () {
             if (PORTAL === 'student') {
-              setCurrentUser(STUDENT_PORTAL_USERNAME);
+              var offName = (document.getElementById('loginName') && document.getElementById('loginName').value || '').trim();
+              if (!offName) {
+                alert('请先输入用户名，或使用在线登录');
+                return;
+              }
+              setCurrentUser(offName);
               setCurrentRole('student');
+              setInterviewGradingApproved(false);
               state.view = 'list';
               persistSpeakingView('list');
               render();
@@ -995,11 +1268,14 @@ image.png<!DOCTYPE html>
             render();
           };
           document.getElementById('btnLogin').onclick = function () {
-            const name = PORTAL === 'student' ? STUDENT_PORTAL_USERNAME : (document.getElementById('loginName').value || '').trim();
+            const name = (document.getElementById('loginName').value || '').trim();
             const pwd = (document.getElementById('loginPwd').value || '').trim();
             const teacherCodeEl = document.getElementById('loginTeacherCode');
             const teacherCode = teacherCodeEl ? (teacherCodeEl.value || '') : '';
-            if (!PORTAL === 'student' && !name) { alert('请输入学号或用户名'); return; }
+            if (!name) {
+              alert('请输入用户名');
+              return;
+            }
             if (API_NODE && !pwd) { alert('请输入密码'); return; }
             if (API_NODE) {
               var btnLoginEl = document.getElementById('btnLogin');
@@ -1041,6 +1317,7 @@ image.png<!DOCTYPE html>
                           setCurrentUser(data.username);
                           setCurrentRole(data.role || (PORTAL === 'teacher' ? 'teacher' : 'student'));
                           if (PORTAL === 'student') {
+                            setInterviewGradingApproved(!!data.interviewGradingApproved);
                             state.view = 'list';
                             persistSpeakingView('list');
                           } else {
@@ -1080,6 +1357,7 @@ image.png<!DOCTYPE html>
                       setCurrentUser(name);
                       setCurrentRole(PORTAL === 'teacher' ? 'teacher' : 'student');
                       if (PORTAL === 'student') {
+                        setInterviewGradingApproved(false);
                         state.view = 'list';
                         persistSpeakingView('list');
                       } else {
@@ -1097,6 +1375,7 @@ image.png<!DOCTYPE html>
             setCurrentUser(name);
             setCurrentRole(PORTAL === 'teacher' ? 'teacher' : 'student');
             if (PORTAL === 'student') {
+              setInterviewGradingApproved(false);
               state.view = 'list';
               persistSpeakingView('list');
             } else {
@@ -1111,10 +1390,10 @@ image.png<!DOCTYPE html>
         // 已登录时顶栏右侧：当前用户 + 退出
         function headerRight() {
           var line = escapeHtml(currentUser);
-          if (PORTAL === 'student' && getStudentTaskName()) {
+          if (PORTAL === 'student') {
             line +=
-              ' <span style="color:var(--muted);font-size:0.85rem">（作业姓名：' +
-              escapeHtml(getStudentTaskName()) +
+              ' <span style="color:var(--muted);font-size:0.85rem">（Interview 云端批改：' +
+              (getInterviewGradingApproved() ? '已开通' : '未开通') +
               '）</span>';
           }
           return '<span class="header-user">' + line + '</span><button data-action="logout">退出</button>';
@@ -1191,6 +1470,11 @@ image.png<!DOCTYPE html>
                 <p>查看已创建任务列表（题目数量、创建时间）。</p>
                 <button class="primary" style="margin-top:0.5rem">查看</button>
               </div>
+              <div class="card" data-action="main" data-choice="teacherInterviewApproval">
+                <h2>Interview · 云端批改开通</h2>
+                <p>按学生<strong>注册用户名</strong>开通或关闭 Interview 云端 ASR+批改（作业与自主练习）。Listen &amp; Repeat 无需开通。</p>
+                <button class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
             </div>
           `;
           root.querySelectorAll('[data-action=main]').forEach(function (btn) {
@@ -1235,53 +1519,61 @@ image.png<!DOCTYPE html>
           return;
         }
 
-        // 已登录：学生端首页（仅输入姓名；确认后直接进入作业列表，无 Interview / Listen&Repeat 分流）
+        // 已登录：学生端门户首页（题库练习 / 作业 / LNR / 转写记录）
         if (state.view === 'list' && state.mainChoice === null && PORTAL === 'student') {
-          var nameOk = getStudentTaskName();
           root.innerHTML = `
-            <div class="header" style="flex-wrap:wrap;gap:0.5rem"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem">${headerHubBtn()}<h1 style="margin:0">学生端 · 我的作业</h1></div><div class="header-right">${headerRight()}</div></div>
-            <p style="color:var(--muted);margin-bottom:1rem">请输入你的<strong>姓名</strong>（与教师布置时填写的<strong>学生姓名</strong>一致），确认后即可查看并完成教师布置的作业。</p>
-            <div class="card" style="margin-bottom:1rem">
-              <h2>学生姓名</h2>
-              <p style="color:var(--muted);font-size:0.9rem">用于匹配教师下发的作业，区分大小写与空格。</p>
-              <input type="text" id="studentSearchName" class="fill-input" style="max-width:100%;margin-top:0.5rem" placeholder="例如：张三" value="${escapeHtml(getStudentTaskName())}">
-              <button type="button" class="primary" style="margin-top:0.75rem" id="btnStudentNameConfirm">确认并查找作业</button>
-              ${nameOk ? '<p style="margin-top:0.75rem;color:var(--correct);font-size:0.9rem">当前姓名：<strong>' + escapeHtml(nameOk) + '</strong> · <button type="button" data-action="clearStudentName" style="background:none;border:none;color:var(--accent);cursor:pointer;text-decoration:underline;padding:0;font:inherit">更换姓名</button></p><button type="button" class="primary" style="margin-top:0.75rem" id="btnStudentOpenTasks">进入作业列表</button>' : ''}
+            <div class="header" style="flex-wrap:wrap;gap:0.5rem"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem">${headerHubBtn()}<h1 style="margin:0">学生端 · 门户</h1></div><div class="header-right">${headerRight()}</div></div>
+            <p style="color:var(--muted);margin-bottom:1rem">登录名即<strong>学生身份</strong>，教师布置作业时填写的「学生姓名」须与注册名<strong>完全一致</strong>。Interview 云端批改需教师开通；可用浏览器<strong>实时语音转写</strong>复制到外部 AI。Listen &amp; Repeat 评测无需申请。</p>
+            <div class="main-choice">
+              <div class="card" data-action="stuPortal" data-stu="real">
+                <h2>Interview · 题库练习</h2>
+                <p>浏览全部 Interview 题库，自主选题练习（云端评测需教师开通；否则请用页内实时转写）。</p>
+                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
+              <div class="card" data-action="stuPortal" data-stu="tasks">
+                <h2>我的作业</h2>
+                <p>查看并完成教师下发的 Interview / Listen &amp; Repeat 作业。</p>
+                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
+              <div class="card" data-action="stuPortal" data-stu="lnr">
+                <h2>Listen &amp; Repeat</h2>
+                <p>跟读与智聆评测：<strong>完全开放</strong>，无需教师开通云端批改。</p>
+                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
+              <div class="card" data-action="stuPortal" data-stu="transcript">
+                <h2>转写记录</h2>
+                <p>保存浏览器语音转写片段，便于复制到其他 AI。</p>
+                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
             </div>
           `;
-          var snInp = document.getElementById('studentSearchName');
-          if (snInp) snInp.value = getStudentTaskName();
-          var btnSn = document.getElementById('btnStudentNameConfirm');
-          if (btnSn) {
-            btnSn.onclick = function () {
-              var v = (document.getElementById('studentSearchName') && document.getElementById('studentSearchName').value || '').trim();
-              if (!v) { alert('请输入姓名'); return; }
-              setStudentTaskName(v);
-              state.mainChoice = 'studentTasks';
-              state.studentAssignments = null;
-              state.studentAssignmentsLoading = false;
-              state.studentListLoadError = '';
+          root.querySelectorAll('[data-action=stuPortal]').forEach(function (card) {
+            card.onclick = function () {
+              var st = card.getAttribute('data-stu');
+              if (st === 'real') {
+                state.mainChoice = 'real';
+                state.practiceBank = null;
+                state.practiceBankLoading = false;
+                state.realTestMode = 'topic';
+                state.realTestCategoryId = null;
+                state.realTestIndex = 0;
+                state.realTestResult = null;
+                state.realTestError = '';
+                state.realWebSpeechLive = '';
+              } else if (st === 'tasks') {
+                state.mainChoice = 'studentTasks';
+                state.studentAssignments = null;
+                state.studentAssignmentsLoading = false;
+                state.studentListLoadError = '';
+              } else if (st === 'lnr') {
+                window.location.href = listenRepeatUrl();
+                return;
+              } else if (st === 'transcript') {
+                state.mainChoice = 'transcriptLog';
+              }
               render();
             };
-          }
-          var clrSn = root.querySelector('[data-action=clearStudentName]');
-          if (clrSn) {
-            clrSn.onclick = function () {
-              try { sessionStorage.removeItem(STUDENT_NAME_STORAGE_KEY); } catch (_) {}
-              render();
-            };
-          }
-          var btnOpenTasks = document.getElementById('btnStudentOpenTasks');
-          if (btnOpenTasks) {
-            btnOpenTasks.onclick = function () {
-              if (!getStudentTaskName()) return;
-              state.mainChoice = 'studentTasks';
-              state.studentAssignments = null;
-              state.studentAssignmentsLoading = false;
-              state.studentListLoadError = '';
-              render();
-            };
-          }
+          });
           var toHubEl = root.querySelector('[data-action=toHub]');
           if (toHubEl) {
             toHubEl.onclick = function () {
@@ -1566,6 +1858,138 @@ image.png<!DOCTYPE html>
               render();
             };
           });
+          return;
+        }
+
+        // ---------- 教师：Interview 云端批改开通 ----------
+        if (state.mainChoice === 'teacherInterviewApproval') {
+          root.innerHTML = `
+            <div class="header"><h1>Interview 云端批改</h1><div class="header-right"><button data-action="backIap">返回</button> ${headerRight()}</div></div>
+            <div class="card">
+              <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">开通后，该学生可使用 Interview <strong>作业云端批改</strong> 与 <strong>题库自主练习的云端评测</strong>。Listen &amp; Repeat 始终无需开通。</p>
+              <label for="iapStudent">学生用户名（须与学生注册名一致）</label>
+              <input type="text" id="iapStudent" class="fill-input" style="max-width:100%;margin-top:0.35rem" placeholder="例如：张三">
+              <div style="margin-top:0.75rem">
+                <label><input type="radio" name="iapOn" value="1" checked> 开通</label>
+                <label style="margin-left:1rem"><input type="radio" name="iapOn" value="0"> 关闭</label>
+              </div>
+              <button type="button" class="primary" style="margin-top:1rem" id="btnIapSubmit">提交</button>
+              <p id="iapMsg" style="margin-top:0.75rem;color:var(--muted);font-size:0.9rem"></p>
+            </div>
+          `;
+          root.querySelector('[data-action=backIap]').onclick = function () {
+            state.mainChoice = null;
+            render();
+          };
+          root.querySelector('[data-action=logout]').onclick = function () {
+            clearCurrentUser();
+            state.mainChoice = null;
+            state.view = 'list';
+            render();
+          };
+          var btnIap = document.getElementById('btnIapSubmit');
+          if (btnIap) {
+            btnIap.onclick = function () {
+              var stu = (document.getElementById('iapStudent') && document.getElementById('iapStudent').value || '').trim();
+              if (!stu) {
+                alert('请输入学生用户名');
+                return;
+              }
+              var onEl = document.querySelector('input[name="iapOn"]:checked');
+              var approved = onEl && onEl.value === '1';
+              fetch(API_NODE + '/api/teacher/student-interview-grading', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  teacherUsername: currentUser,
+                  studentUsername: stu,
+                  approved: approved
+                })
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  var el = document.getElementById('iapMsg');
+                  if (data && data.ok) {
+                    if (el) el.textContent = '已更新：' + stu + ' · 云端批改：' + (data.interviewGradingApproved ? '已开通' : '已关闭');
+                  } else {
+                    alert((data && data.message) || '操作失败');
+                  }
+                })
+                .catch(function () {
+                  alert('无法连接后端');
+                });
+            };
+          }
+          return;
+        }
+
+        // ---------- 学生：转写记录 ----------
+        if (state.mainChoice === 'transcriptLog' && PORTAL === 'student') {
+          var logs = getTranscriptLogs();
+          root.innerHTML = `
+            <div class="header"><h1>转写记录</h1><div class="header-right"><button data-action="backTL">返回</button> ${headerRight()}</div></div>
+            <div class="card">
+              <p style="color:var(--muted);font-size:0.9rem">浏览器内语音转写（及你在题库练习页保存的文本）保存在本机，可一键复制到其他 AI。</p>
+              <button type="button" id="btnClearTranscriptLog" style="margin-top:0.5rem">清空记录</button>
+            </div>
+            ${
+              logs.length
+                ? logs
+                    .map(function (row, i) {
+                      var d = new Date(row.t || 0);
+                      return (
+                        '<div class="card"><p style="color:var(--muted);font-size:0.8rem">' +
+                        escapeHtml(d.toLocaleString()) +
+                        '</p><div class="transcript-box" style="margin-top:0.5rem">' +
+                        escapeHtml(row.text || '') +
+                        '</div><button type="button" class="primary" style="margin-top:0.5rem" data-copy-tlog="' +
+                        i +
+                        '">复制</button></div>'
+                      );
+                    })
+                    .join('')
+                : '<div class="card"><p style="color:var(--muted)">暂无记录。在「Interview 题库练习」中录音时可保存转写。</p></div>'
+            }
+          `;
+          root.querySelector('[data-action=backTL]').onclick = function () {
+            state.mainChoice = null;
+            render();
+          };
+          root.querySelector('[data-action=logout]').onclick = function () {
+            clearCurrentUser();
+            state.mainChoice = null;
+            state.view = 'list';
+            render();
+          };
+          root.querySelectorAll('[data-copy-tlog]').forEach(function (btn) {
+            btn.onclick = function () {
+              var idx = parseInt(btn.getAttribute('data-copy-tlog'), 10);
+              var row = logs[idx];
+              if (!row) return;
+              var t = row.text || '';
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(t).then(function () {
+                  alert('已复制');
+                }).catch(function () {
+                  alert(t);
+                });
+              } else {
+                alert(t);
+              }
+            };
+          });
+          var clr = document.getElementById('btnClearTranscriptLog');
+          if (clr) {
+            clr.onclick = function () {
+              if (!confirm('确定清空转写记录？')) return;
+              try {
+                sessionStorage.removeItem(TRANSCRIPT_LOG_KEY);
+              } catch (_) {}
+              render();
+            };
+          }
           return;
         }
 
@@ -2747,6 +3171,8 @@ image.png<!DOCTYPE html>
               </div>
             `;
             root.querySelector('[data-action=backMain]').onclick = function () {
+              stopTencentRealtimeAsr();
+              stopRealPracticeSpeech();
               state.mainChoice = null;
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
@@ -2755,6 +3181,8 @@ image.png<!DOCTYPE html>
               state.realTestLoading = false;
               state.realTestError = '';
               state.realTestResult = null;
+              state.realWebSpeechLive = '';
+              state.realTencentLive = '';
               render();
             };
             var retry = root.querySelector('[data-action=retryPracticeBank]');
@@ -2795,6 +3223,8 @@ image.png<!DOCTYPE html>
             `;
 
             root.querySelector('[data-action=backMain]').onclick = function () {
+              stopTencentRealtimeAsr();
+              stopRealPracticeSpeech();
               state.mainChoice = null;
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
@@ -2803,6 +3233,8 @@ image.png<!DOCTYPE html>
               state.realTestLoading = false;
               state.realTestError = '';
               state.realTestResult = null;
+              state.realWebSpeechLive = '';
+              state.realTencentLive = '';
               render();
             };
 
@@ -2883,16 +3315,29 @@ image.png<!DOCTYPE html>
               '</div>'
             : '';
 
+          var stuCloudHint =
+            PORTAL === 'student'
+              ? getInterviewGradingApproved()
+                ? '<p style="color:var(--correct);font-size:0.9rem;margin-top:0.5rem">你已开通 Interview 云端评测：录音将经服务器转发至 ASR+批改。</p>'
+                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，请使用下方<strong>实时语音转写</strong>复制到外部 AI；教师可在「Interview · 云端批改开通」为你开通。</p>'
+              : '';
+          var stuPrompt =
+            PORTAL === 'student'
+              ? '用英文作答约 45 秒。点击「开始录音」后说话；停止后将' +
+                (getInterviewGradingApproved() ? '提交云端评测。' : '尝试云端评测（未开通则见错误提示，请用实时转写）。')
+              : '请根据下面的提示，用英文作答（45 秒左右），点击「开始录音」后开始说，结束后系统会把音频上传到后端做 ASR + 口语评测。';
+
           root.innerHTML = `
             <div class="header"><h1>题目练习 · ${escapeHtml(modeTitle)} · ${escapeHtml(cat.title || '')}</h1><div class="header-right"><button data-action="backCategory">返回小类</button> ${headerRight()}</div></div>
             ${navHtml}
             <div class="card">
               <h2>题目</h2>
-              <p style="color:var(--muted);margin-top:0.5rem">请根据下面的提示，用英文作答（45 秒左右），点击「开始录音」后开始说，结束后系统会把音频上传到后端做 ASR + 口语评测。</p>
+              <p style="color:var(--muted);margin-top:0.5rem">${escapeHtml(stuPrompt)}</p>
+              ${stuCloudHint}
               <p style="color:var(--text);margin-top:0.75rem;white-space:pre-wrap">${escapeHtml(q.refText || '')}</p>
             </div>
             <div class="card">
-              <p style="color:var(--muted);font-size:0.9rem;margin-bottom:0.5rem">录音与评测：</p>
+              <p style="color:var(--muted);font-size:0.9rem;margin-bottom:0.5rem">录音与云端评测：</p>
               ${recording ? `<div class="countdown-box ${state.realTestSecondsLeft <= 10 ? 'warn' : ''}" style="margin-bottom:1rem"><span class="num" id="realCountdownNum">${state.realTestSecondsLeft}</span><span style="color:var(--muted);font-size:1rem"> 秒</span></div>` : ''}
               <button class="primary" id="btnRealRecord" ${loading ? 'disabled' : ''}>
                 ${recording ? '停止录音并开始评测' : '开始录音'}
@@ -2901,6 +3346,18 @@ image.png<!DOCTYPE html>
                 录音时请保持网络畅通。若浏览器首次弹窗，请允许访问麦克风。
               </p>
             </div>
+            <div class="card">
+              <h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3>
+              <p style="color:var(--muted);font-size:0.85rem">录音时自动识别（英文），不依赖云端批改权限，可配合复制到其他 AI。</p>
+              <div id="realWebSpeechBox" class="transcript-box">${escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示，建议 Chrome / Edge）'}</div>
+              <button type="button" class="primary" style="margin-top:0.5rem" id="btnRealSaveTranscript">将当前转写加入记录</button>
+            </div>
+            <div class="card">
+              <h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>
+              <p style="color:var(--muted);font-size:0.85rem">浏览器直连腾讯云 WebSocket；需在 server/.env 配置 <code>TENCENT_ASR_APP_ID</code> 与 ASR 密钥。学生须已开通 Interview 云端批改；与 Listen &amp; Repeat 无关。</p>
+              <div id="realTencentBox" class="transcript-box">${escapeHtml(state.realTencentLive || '') || '（开通并配置后，录音中显示）'}</div>
+              <button type="button" class="primary" style="margin-top:0.5rem" id="btnTencentSaveTranscript">将腾讯云转写加入记录</button>
+            </div>
             ${statusHtml}
             ${errorHtml}
             ${resultHtml}
@@ -2908,6 +3365,8 @@ image.png<!DOCTYPE html>
 
           root.querySelector('[data-action=backCategory]').onclick = function () {
             if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
+            stopTencentRealtimeAsr();
+            stopRealPracticeSpeech();
             state.realTestSecondsLeft = SPEAKING_DURATION;
             if (realRecorder) { try { realRecorder.stop(); } catch (_) {} realRecorder = null; }
             if (realRecorderStream) { try { realRecorderStream.getTracks().forEach(t => t.stop()); } catch (_) {} realRecorderStream = null; }
@@ -2917,13 +3376,37 @@ image.png<!DOCTYPE html>
             state.realTestLoading = false;
             state.realTestError = '';
             state.realTestResult = null;
+            state.realWebSpeechLive = '';
+            state.realTencentLive = '';
             render();
           };
 
           var prevBtn = root.querySelector('[data-action=prevQ]');
-          if (prevBtn) prevBtn.onclick = function () { state.realTestIndex = Math.max(0, state.realTestIndex - 1); state.realTestResult = null; state.realTestError = ''; render(); };
+          if (prevBtn) {
+            prevBtn.onclick = function () {
+              stopTencentRealtimeAsr();
+              stopRealPracticeSpeech();
+              state.realTestIndex = Math.max(0, state.realTestIndex - 1);
+              state.realTestResult = null;
+              state.realTestError = '';
+              state.realWebSpeechLive = '';
+              state.realTencentLive = '';
+              render();
+            };
+          }
           var nextBtn = root.querySelector('[data-action=nextQ]');
-          if (nextBtn) nextBtn.onclick = function () { state.realTestIndex = Math.min(qs.length - 1, state.realTestIndex + 1); state.realTestResult = null; state.realTestError = ''; render(); };
+          if (nextBtn) {
+            nextBtn.onclick = function () {
+              stopTencentRealtimeAsr();
+              stopRealPracticeSpeech();
+              state.realTestIndex = Math.min(qs.length - 1, state.realTestIndex + 1);
+              state.realTestResult = null;
+              state.realTestError = '';
+              state.realWebSpeechLive = '';
+              state.realTencentLive = '';
+              render();
+            };
+          }
 
           const btnRecord = document.getElementById('btnRealRecord');
           if (btnRecord && !loading) {
@@ -2933,13 +3416,55 @@ image.png<!DOCTYPE html>
                   alert('当前浏览器不支持录音，请使用最新版 Chrome 或 Edge。');
                   return;
                 }
-                navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+                  stopTencentRealtimeAsr();
+                  stopRealPracticeSpeech();
+                  state.realWebSpeechLive = '';
+                  state.realTencentLive = '';
+                  if (canUseTencentAsrStream()) {
+                    startTencentRealtimeAsr(
+                      stream,
+                      function (text) {
+                        state.realTencentLive = text;
+                        var el = document.getElementById('realTencentBox');
+                        if (el) el.textContent = text || '（识别中…）';
+                      },
+                      function () {}
+                    );
+                  }
+                  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                  if (SpeechRecognition) {
+                    try {
+                      realSpeechRecognition = new SpeechRecognition();
+                      realSpeechRecognition.continuous = true;
+                      realSpeechRecognition.interimResults = true;
+                      realSpeechRecognition.lang = 'en-US';
+                      realSpeechRecognition.onresult = function (e) {
+                        var t = Array.from(e.results)
+                          .map(function (r) {
+                            return r[0].transcript;
+                          })
+                          .join('');
+                        state.realWebSpeechLive = t;
+                        var box = document.getElementById('realWebSpeechBox');
+                        if (box) box.textContent = t || '（正在识别…）';
+                      };
+                      realSpeechRecognition.onerror = function () {};
+                      realSpeechRecognition.start();
+                    } catch (e) {}
+                  }
                   realRecorderStream = stream;
                   realRecorderChunks = [];
-                  try { realRecorder = new MediaRecorder(stream); } catch (e) {
+                  try {
+                    realRecorder = new MediaRecorder(stream);
+                  } catch (e) {
                     alert('无法创建录音器：' + e.message);
-                    stream.getTracks().forEach(t => t.stop());
+                    stream.getTracks().forEach(function (t) {
+                      t.stop();
+                    });
                     realRecorderStream = null;
+                    stopTencentRealtimeAsr();
+                    stopRealPracticeSpeech();
                     return;
                   }
                   realCurrentRefText = q.refText || '';
@@ -2947,6 +3472,8 @@ image.png<!DOCTYPE html>
                     if (e.data && e.data.size > 0) realRecorderChunks.push(e.data);
                   };
                   realRecorder.onstop = function () {
+                    stopTencentRealtimeAsr();
+                    stopRealPracticeSpeech();
                     if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
                     state.realTestSecondsLeft = SPEAKING_DURATION;
                     state.realTestRecording = false;
@@ -2954,7 +3481,14 @@ image.png<!DOCTYPE html>
                     setTimeout(function () {
                       const blob = new Blob(realRecorderChunks, { type: 'audio/webm' });
                       realRecorder = null;
-                      if (realRecorderStream) { try { realRecorderStream.getTracks().forEach(t => t.stop()); } catch (_) {} realRecorderStream = null; }
+                      if (realRecorderStream) {
+                        try {
+                          realRecorderStream.getTracks().forEach(function (t) {
+                            t.stop();
+                          });
+                        } catch (_) {}
+                        realRecorderStream = null;
+                      }
                       if (blob.size === 0) {
                         state.realTestLoading = false;
                         state.realTestError = '录音数据为空，请重新录音并确保麦克风正常。';
@@ -2962,34 +3496,84 @@ image.png<!DOCTYPE html>
                         render();
                         return;
                       }
-                      const fd = new FormData();
-                      fd.append('audio', blob, 'real-test.webm');
-                      fd.append('refText', realCurrentRefText || '');
-                      // asr-eval 当前只依赖音频本身；保留字段便于后端兼容
-                      fd.append('evalMode', '3');
                       state.realTestLoading = true;
                       state.realTestError = '';
                       state.realTestResult = null;
                       render();
-                      fetch(API_BASE + '/api/asr-eval', { method: 'POST', body: fd })
-                        .then(r => r.json().catch(() => ({})))
-                        .then(data => {
-                          if (!data || data.ok === false) {
-                            state.realTestError = data && data.error ? data.error : '口语评测失败，请稍后重试。';
-                            state.realTestResult = null;
-                          } else {
-                            state.realTestError = '';
-                            state.realTestResult = data;
-                          }
-                          state.realTestLoading = false;
-                          render();
-                        })
-                        .catch(() => {
-                          state.realTestLoading = false;
-                          state.realTestError = '无法连接口语评测后端，请确认本机 http://localhost:5001 已运行。';
+
+                      var useNodeProxy = PORTAL === 'student' && API_NODE && getCurrentUser();
+
+                      function finishEval(data, errMsg) {
+                        state.realTestLoading = false;
+                        if (errMsg) {
+                          state.realTestError = errMsg;
                           state.realTestResult = null;
-                          render();
+                        } else if (data && data.ok === false) {
+                          state.realTestError = (data.message || data.error) || '评测失败';
+                          state.realTestResult = null;
+                        } else if (data && (data.ok === true || data.transcript != null || typeof data.overall === 'number')) {
+                          state.realTestError = '';
+                          state.realTestResult = data;
+                        } else {
+                          state.realTestError = (data && (data.error || data.message)) ? (data.error || data.message) : '口语评测失败，请稍后重试。';
+                          state.realTestResult = null;
+                        }
+                        render();
+                      }
+
+                      if (useNodeProxy) {
+                        blobToBase64(blob, function (b64) {
+                          if (!b64) {
+                            finishEval(null, '无法读取录音数据');
+                            return;
+                          }
+                          fetch(
+                            API_NODE +
+                              '/api/student/interview-self-eval?username=' +
+                              encodeURIComponent(getStudentTaskName()),
+                            {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ audioB64: b64, refText: realCurrentRefText || '' })
+                            }
+                          )
+                            .then(function (r) {
+                              return r.json().catch(function () {
+                                return {};
+                              }).then(function (data) {
+                                return { okHttp: r.ok, data: data };
+                              });
+                            })
+                            .then(function (res) {
+                              var data = res.data;
+                              if (!res.okHttp) {
+                                finishEval(data, (data && data.message) || '评测请求失败');
+                                return;
+                              }
+                              finishEval(data, null);
+                            })
+                            .catch(function () {
+                              finishEval(null, '无法连接 Node 评测接口');
+                            });
                         });
+                      } else {
+                        const fd = new FormData();
+                        fd.append('audio', blob, 'real-test.webm');
+                        fd.append('refText', realCurrentRefText || '');
+                        fd.append('evalMode', '3');
+                        fetch(API_BASE + '/api/asr-eval', { method: 'POST', body: fd })
+                          .then(function (r) {
+                            return r.json().catch(function () {
+                              return {};
+                            });
+                          })
+                          .then(function (data) {
+                            finishEval(data, null);
+                          })
+                          .catch(function () {
+                            finishEval(null, '无法连接口语评测后端，请确认 Python 服务已运行。');
+                          });
+                      }
                     }, 150);
                   };
                   realRecorder.start(500);
@@ -3010,14 +3594,44 @@ image.png<!DOCTYPE html>
                     }
                   }, 1000);
                   render();
-                }).catch(() => { alert('无法访问麦克风，请在浏览器地址栏允许本页面使用麦克风。'); });
+                }).catch(function () {
+                  alert('无法访问麦克风，请在浏览器地址栏允许本页面使用麦克风。');
+                });
               } else {
+                stopTencentRealtimeAsr();
+                stopRealPracticeSpeech();
                 if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
                 state.realTestSecondsLeft = SPEAKING_DURATION;
                 if (realRecorder) { try { realRecorder.stop(); } catch (_) {} }
                 state.realTestRecording = false;
                 render();
               }
+            };
+          }
+          var btnSaveTr = document.getElementById('btnRealSaveTranscript');
+          if (btnSaveTr) {
+            btnSaveTr.onclick = function () {
+              var box = document.getElementById('realWebSpeechBox');
+              var txt = (box && box.textContent ? box.textContent : state.realWebSpeechLive || '').trim();
+              if (!txt || txt.indexOf('（') === 0) {
+                alert('暂无有效转写内容');
+                return;
+              }
+              appendTranscriptLog(txt, { source: 'interview-real', ref: (q.refText || '').slice(0, 80) });
+              alert('已加入转写记录');
+            };
+          }
+          var btnTenc = document.getElementById('btnTencentSaveTranscript');
+          if (btnTenc) {
+            btnTenc.onclick = function () {
+              var box = document.getElementById('realTencentBox');
+              var txt = (box && box.textContent ? box.textContent : state.realTencentLive || '').trim();
+              if (!txt || txt.indexOf('（') === 0) {
+                alert('暂无腾讯云转写内容');
+                return;
+              }
+              appendTranscriptLog(txt, { source: 'tencent-stream', ref: (q.refText || '').slice(0, 80) });
+              alert('已加入转写记录');
             };
           }
           return;

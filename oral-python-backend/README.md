@@ -50,6 +50,17 @@ TENCENT_ASR_REGION=ap-guangzhou
 - 智聆 **TENCENT** 三个必填，否则 `/api/oral-eval` 会返回“未配置”错误。
 - **ASR 密钥**（可选）：与「语音识别」控制台 ASR 的 SecretId/SecretKey 一致；不配则仅智聆打分，转写仍可能显示为参考句对齐。
 
+### Interview：腾讯云「实时语音识别」流式（由 Node 签发 URL）
+
+- **不在本 Python 服务内实现**。`standalone.html` Interview「题目练习」中的 **腾讯云实时转写（流式）** 由浏览器直连 `wss://asr.cloud.tencent.com`，鉴权 URL 由 **`server/` Node** 的 **`GET /api/tencent-asr/sign`** 生成（签名算法见[实时语音识别 WebSocket](https://cloud.tencent.com/document/product/1093/48982)）。
+- 请在 **`server/.env`** 配置 **`TENCENT_ASR_APP_ID`**、**`TENCENT_ASR_SECRET_ID`**、**`TENCENT_ASR_SECRET_KEY`**，可与上表 **TENCENT_ASR_SECRET_*** 复用；引擎默认 **`16k_en`**（与题目练习英文场景一致）。
+- **Listen & Repeat** 仍走本目录的 **`/api/oral-eval`**（智聆 + 可选一句话 ASR），**无需**配置 Node 侧流式签名。
+
+### 与本目录 `POST /api/asr-eval` 的区别
+
+- **`/api/asr-eval`**：整段录音上传后的 **一句话识别** + 本地语法批改，适合交卷后评测。
+- **实时流式**：边说边出字，需 Node 签名 + 浏览器按文档推送 **PCM** 二进制帧；计费与权限以腾讯云控制台为准。
+
 ## 第三步：启动服务
 
 ```bash

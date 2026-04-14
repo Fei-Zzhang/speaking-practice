@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const { buildTencentRealtimeAsrUrl } = require('./tencent-asr-sign');
 
 const app = express();
 // 与 standalone 中 API_NODE（默认 3003）、server/.env 保持一致，避免与常见 3000 端口冲突
@@ -88,12 +89,54 @@ async function uploadStudentAudioToStorage(assignmentId, studentUsername, questi
 // 教师首次注册需在登录请求中携带 teacherCode，且与本变量一致（不配则无法新注册教师）
 const TEACHER_REGISTER_SECRET = (process.env.TEACHER_REGISTER_SECRET || '').trim();
 
-// 学生端统一登录账号（与前端一致；可在 .env 覆盖）
-const STUDENT_PORTAL_USERNAME = (process.env.STUDENT_PORTAL_USERNAME || 'studentaccount').trim();
-const STUDENT_PORTAL_PASSWORD = (process.env.STUDENT_PORTAL_PASSWORD || '45678').trim();
-
-// Python 口语评测后端地址（给教师“批改音频”用）
+// Python 口语评测后端地址（ASR/批改；Listen&Repeat 与 Interview 云端评测共用）
 const PYTHON_BASE_URL = (process.env.PYTHON_BASE_URL || 'http://localhost:5001').trim();
+
+/** 腾讯云实时语音识别（WebSocket）— 与 oral-python-backend 可共用同一套 ASR 密钥；AppID 见控制台 API 密钥管理 */
+const TENCENT_ASR_APP_ID = (process.env.TENCENT_ASR_APP_ID || process.env.TENCENT_APP_ID || '').trim();
+const TENCENT_ASR_SECRET_ID = (process.env.TENCENT_ASR_SECRET_ID || '').trim();
+const TENCENT_ASR_SECRET_KEY = (process.env.TENCENT_ASR_SECRET_KEY || '').trim();
+
+/** 学生自助注册：用户名长度与字符限制（与前端一致） */
+function isValidStudentRegisterUsername(name) {
+  const s = String(name || '').trim();
+  if (s.length < 2 || s.length > 48) return false;
+  return /^[\u4e00-\u9fa5a-zA-Z0-9._-]+$/.test(s);
+}
+
+function isValidStudentRegisterPassword(pwd) {
+  const s = String(pwd || '');
+  return s.length >= 4 && s.length <= 128;
+}
+
+async function getStudentInterviewApproval(username) {
+  const uname = String(username || '').trim();
+  if (!uname) return { ok: false, approved: false };
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('role, interview_grading_approved')
+    .eq('username', uname)
+    .maybeSingle();
+  if (error || !user) return { ok: false, approved: false };
+  if ((user.role || 'student') !== 'student') return { ok: true, approved: false };
+  return { ok: true, approved: !!user.interview_grading_approved };
+}
+
+/** Interview 腾讯云实时流式 ASR：教师可用；学生需已开通 interview_grading_approved（与作业云端批改一致，不计费说明见文档） */
+async function getTencentStreamEligibility(username) {
+  const uname = String(username || '').trim();
+  if (!uname) return { ok: false, message: '需要 username' };
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('role, interview_grading_approved')
+    .eq('username', uname)
+    .maybeSingle();
+  if (error || !user) return { ok: false, message: '用户不存在' };
+  const role = user.role || 'student';
+  if (role === 'teacher') return { ok: true };
+  if (role === 'student' && user.interview_grading_approved) return { ok: true };
+  return { ok: false, message: '需要开通 Interview 云端批改后才可使用腾讯云实时识别' };
+}
 
 // 允许任意来源访问（本地开发）；部署时可改为具体前端域名
 app.use(cors({ origin: true, credentials: false }));
@@ -111,7 +154,95 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, message: '口语练习后端运行中' });
 });
 
-// 登录 / 注册：学生端仅允许统一账号；教师端按原逻辑
+/**
+ * 签发腾讯云「实时语音识别」WebSocket URL（浏览器直连 wss://asr.cloud.tencent.com）
+ * 鉴权与计费见腾讯云文档；学生与 Interview 云端批改权限绑定。
+ */
+app.get('/api/tencent-asr/sign', async (req, res) => {
+  try {
+    const username = (req.query.username || '').trim();
+    const engineModelType = (req.query.engine_model_type || '16k_en').trim();
+    const elig = await getTencentStreamEligibility(username);
+    if (!elig.ok) {
+      return res.status(403).json({ ok: false, message: elig.message });
+    }
+    if (!TENCENT_ASR_APP_ID || !TENCENT_ASR_SECRET_ID || !TENCENT_ASR_SECRET_KEY) {
+      return res.status(503).json({
+        ok: false,
+        message:
+          '服务端未配置 TENCENT_ASR_APP_ID、TENCENT_ASR_SECRET_ID、TENCENT_ASR_SECRET_KEY（可与 oral-python-backend/.env 中 ASR 密钥一致，见 server/.env.example）',
+      });
+    }
+    const { url, voiceId } = buildTencentRealtimeAsrUrl(
+      TENCENT_ASR_APP_ID,
+      TENCENT_ASR_SECRET_ID,
+      TENCENT_ASR_SECRET_KEY,
+      { engine_model_type: engineModelType }
+    );
+    res.json({ ok: true, url, voiceId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
+// 学生自助注册（门户：用户名即身份，与教师布置时填写的学生姓名一致）
+app.post('/api/auth/register-student', async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    const name = (username || '').trim();
+    const pwd = (password || '').trim();
+    if (!isValidStudentRegisterUsername(name)) {
+      return res.status(400).json({
+        ok: false,
+        message: '用户名需 2～48 字，仅支持中文、字母、数字、._-',
+      });
+    }
+    if (!isValidStudentRegisterPassword(pwd)) {
+      return res.status(400).json({ ok: false, message: '密码长度需在 4～128 位之间' });
+    }
+    const { data: exists, error: findErr } = await supabase
+      .from('users')
+      .select('username')
+      .eq('username', name)
+      .maybeSingle();
+    if (findErr) {
+      console.error('register-student 查询失败', findErr);
+      return res.status(500).json({ ok: false, message: '服务器错误：' + (findErr.message || String(findErr)) });
+    }
+    if (exists) {
+      return res.status(409).json({ ok: false, message: '该用户名已被注册' });
+    }
+    const { data: newUser, error: insertErr } = await supabase
+      .from('users')
+      .insert({
+        username: name,
+        password: pwd,
+        role: 'student',
+      })
+      .select('username, role')
+      .single();
+    if (insertErr) {
+      console.error('register-student 插入失败', insertErr);
+      const detail = formatSupabaseError(insertErr);
+      return res.status(500).json({
+        ok: false,
+        message: detail ? '注册失败：' + detail : '注册失败（请确认已执行 supabase-portal-student-v1.sql 增加 interview_grading_approved）',
+      });
+    }
+    return res.json({
+      ok: true,
+      username: newUser.username,
+      role: newUser.role || 'student',
+      interviewGradingApproved: false,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
+// 登录 / 注册：学生端按用户名+密码；教师端按原逻辑
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password, expectedRole, teacherCode } = req.body || {};
@@ -119,60 +250,39 @@ app.post('/api/auth/login', async (req, res) => {
     const pwd = (password || '').trim();
     const wantRole = (expectedRole || 'student').trim() === 'teacher' ? 'teacher' : 'student';
 
-    // ---------- 学生端：仅允许 STUDENT_PORTAL_USERNAME / STUDENT_PORTAL_PASSWORD ----------
+    // ---------- 学生端：已注册学生账号 ----------
     if (wantRole === 'student') {
+      if (!name) {
+        return res.status(400).json({ ok: false, message: '请输入用户名' });
+      }
       if (!pwd) {
         return res.status(400).json({ ok: false, message: '请输入密码' });
       }
-      if (name !== STUDENT_PORTAL_USERNAME) {
-        return res.status(403).json({
-          ok: false,
-          message:
-            '学生端账号须为「' +
-            STUDENT_PORTAL_USERNAME +
-            '」（与前端只读框一致）。若你改过 server/.env 的 STUDENT_PORTAL_USERNAME，请与前端 standalone.html 中的 STUDENT_PORTAL_USERNAME 保持一致。',
-        });
-      }
-      if (pwd !== STUDENT_PORTAL_PASSWORD) {
-        return res.status(403).json({
-          ok: false,
-          message:
-            '密码错误。须与服务器配置 STUDENT_PORTAL_PASSWORD 一致（未配置时默认为 45678）。请检查 server/.env 是否改过密码，或确认输入无多余空格。',
-        });
-      }
       const { data: user, error: findErr } = await supabase
         .from('users')
-        .select('id, username, password, role')
-        .eq('username', STUDENT_PORTAL_USERNAME)
+        .select('id, username, password, role, interview_grading_approved')
+        .eq('username', name)
         .maybeSingle();
       if (findErr) {
         console.error('登录查询失败', findErr);
         return res.status(500).json({ ok: false, message: '服务器错误：' + (findErr.message || String(findErr)) });
       }
       if (!user) {
-        const { data: newUser, error: insertErr } = await supabase
-          .from('users')
-          .insert({
-            username: STUDENT_PORTAL_USERNAME,
-            password: STUDENT_PORTAL_PASSWORD,
-            role: 'student',
-          })
-          .select('username, role')
-          .single();
-        if (insertErr) {
-          console.error('注册失败', insertErr);
-          return res.status(500).json({ ok: false, message: '注册失败：' + (insertErr.message || String(insertErr)) });
-        }
-        return res.json({ ok: true, username: newUser.username, role: newUser.role || 'student', isNew: true });
+        return res.status(401).json({ ok: false, message: '用户名或密码错误；若尚未注册请先注册' });
       }
-      if (user.password !== STUDENT_PORTAL_PASSWORD) {
-        return res.status(401).json({ ok: false, message: '密码错误' });
+      if (user.password !== pwd) {
+        return res.status(401).json({ ok: false, message: '用户名或密码错误' });
       }
       const dbRole = user.role || 'student';
       if (dbRole !== 'student') {
-        return res.status(403).json({ ok: false, message: '该账号不可用' });
+        return res.status(403).json({ ok: false, message: '该账号为教师账号，请从教师端入口登录' });
       }
-      return res.json({ ok: true, username: user.username, role: dbRole });
+      return res.json({
+        ok: true,
+        username: user.username,
+        role: dbRole,
+        interviewGradingApproved: !!user.interview_grading_approved,
+      });
     }
 
     // ---------- 教师端 ----------
@@ -397,6 +507,37 @@ app.delete('/api/teacher/assignments/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, message: '删除失败' });
+  }
+});
+
+/** 教师为学生开通 / 关闭 Interview 云端 ASR+批改（作业 submit-audio 与题库自评 interview-self-eval） */
+app.post('/api/teacher/student-interview-grading', async (req, res) => {
+  try {
+    const { teacherUsername, studentUsername, approved } = req.body || {};
+    const t = (teacherUsername || '').trim();
+    const s = (studentUsername || '').trim();
+    if (!t || !s) return res.status(400).json({ ok: false, message: '需要 teacherUsername 与 studentUsername' });
+    const { data: tu, error: te } = await supabase.from('users').select('id, role').eq('username', t).maybeSingle();
+    if (te || !tu || (tu.role || 'student') !== 'teacher') {
+      return res.status(403).json({ ok: false, message: '仅教师可操作' });
+    }
+    const { data: su, error: se } = await supabase.from('users').select('id, role').eq('username', s).maybeSingle();
+    if (se || !su) return res.status(404).json({ ok: false, message: '未找到该学生用户名' });
+    if ((su.role || 'student') !== 'student') {
+      return res.status(400).json({ ok: false, message: '目标账号不是学生' });
+    }
+    const want = approved !== false;
+    const { error: upErr } = await supabase.from('users').update({ interview_grading_approved: want }).eq('username', s);
+    if (upErr) {
+      return res.status(500).json({
+        ok: false,
+        message: formatSupabaseError(upErr) || '更新失败（请确认已执行 supabase-portal-student-v1.sql）',
+      });
+    }
+    res.json({ ok: true, username: s, interviewGradingApproved: want });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
   }
 });
 
@@ -642,7 +783,48 @@ app.post('/api/student/submit', async (req, res) => {
   }
 });
 
-// ---------- 学生：只提交音频（不做批改） ----------
+/** 学生 Interview 自主练习：经 Node 转发 Python asr-eval（需 interview_grading_approved） */
+app.post('/api/student/interview-self-eval', async (req, res) => {
+  try {
+    const u = String(req.query.username || '').trim();
+    const { audioB64, refText } = req.body || {};
+    if (!u) return res.status(400).json({ ok: false, message: '需要 username' });
+    const b64 = typeof audioB64 === 'string' ? audioB64 : '';
+    if (!b64) return res.status(400).json({ ok: false, message: '缺少 audioB64' });
+
+    const approval = await getStudentInterviewApproval(u);
+    if (!approval.ok || !approval.approved) {
+      return res.status(403).json({
+        ok: false,
+        message:
+          '未开通 Interview 云端批改。请向教师申请开通，或使用页面「实时语音转写」复制到外部 AI；Listen & Repeat 不受此限制。',
+      });
+    }
+
+    const audioBytes = Buffer.from(b64, 'base64');
+    const form = new FormData();
+    const audioBlob = new Blob([audioBytes], { type: 'audio/webm' });
+    form.append('audio', audioBlob, 'real-test.webm');
+    form.append('refText', String(refText || ''));
+    form.append('evalMode', '3');
+
+    const pyResp = await fetch(PYTHON_BASE_URL + '/api/asr-eval', {
+      method: 'POST',
+      body: form,
+    });
+    const pyData = await pyResp.json().catch(() => ({}));
+    if (!pyResp.ok || !pyData || pyData.ok !== true) {
+      const msg = pyData && pyData.error ? pyData.error : 'Python 评测失败';
+      return res.status(500).json({ ok: false, message: msg });
+    }
+    res.json(pyData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '评测失败' });
+  }
+});
+
+// ---------- 学生：只提交音频（Interview 作业云端批改） ----------
 app.post('/api/student/submit-audio', express.raw({ type: 'audio/*', limit: '20mb' }), async (req, res) => {
   try {
     const isRawAudio = Buffer.isBuffer(req.body);
@@ -669,6 +851,15 @@ app.post('/api/student/submit-audio', express.raw({ type: 'audio/*', limit: '20m
       .maybeSingle();
 
     if (tErr || !t) return res.status(403).json({ ok: false, message: '无权提交该任务' });
+
+    const approval = await getStudentInterviewApproval(uname);
+    if (!approval.ok || !approval.approved) {
+      return res.status(403).json({
+        ok: false,
+        message:
+          '未开通 Interview 云端批改。请向教师申请开通，或使用浏览器内「实时语音转写」复制后在外部 AI 批改；Listen & Repeat 不受此限制。',
+      });
+    }
 
     // 1) 立即评测并保存结果：音频不落库（只把 Python 的转写/批改结果写入 eval_data）
     const audioBytes = isRawAudio ? req.body : Buffer.from(b64, 'base64');
@@ -844,9 +1035,14 @@ const server = app.listen(PORT, () => {
   console.log('已连接 Supabase 云数据库');
   console.log('后端运行在 http://localhost:' + PORT);
   console.log(
-    'API: auth, practice, teacher/assignments, teacher/evaluate-submission, student/assignments, student/submit, student/submit-audio' +
+    'API: auth/register-student, auth/login, tencent-asr/sign, practice, teacher/assignments, teacher/student-interview-grading, teacher/evaluate-submission, student/assignments, student/submit, student/interview-self-eval, student/submit-audio' +
       (String(process.env.POC_MODE || '').trim() === '1' ? ', poc/*' : '')
   );
+  if (TENCENT_ASR_APP_ID && TENCENT_ASR_SECRET_ID && TENCENT_ASR_SECRET_KEY) {
+    console.log('腾讯云实时 ASR 签名：已配置 TENCENT_ASR_APP_ID / SECRET_*');
+  } else {
+    console.log('腾讯云实时 ASR 签名：未配置（Interview 流式转写需配置 TENCENT_ASR_*，见 server/.env.example）');
+  }
 });
 
 server.on('error', function (err) {

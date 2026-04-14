@@ -1,0 +1,250 @@
+{
+  "version": 2,
+  "updatedAt": "2026-04-05T14:00:04.650Z",
+  "note": "论证要素型词库：ideas=核心观点 future=理由/前提 exp=细节/例证。值格式「高级替换 || 细节补充」，与 Gamer Mode 便利贴一致。",
+  "topics": [
+    {
+      "id": 1,
+      "label": "Topic 1 运动与健身 (Exercise & Fitness)",
+      "entries": {
+        "ideas": {
+          "important": "vital, of great significance, play a pivotal role || for physical health, for maintaining fitness",
+          "good": "beneficial, advantageous, conducive || for cardiovascular health, for relieving stress",
+          "better": "superior, more effective, more rewarding || than sedentary lifestyle, than irregular exercise",
+          "healthy": "physically fit, in optimal condition, wholesome || both physically and mentally",
+          "unnecessary": "dispensable, non-essential, unnecessary for most people || for those with basic fitness needs"
+        },
+        "future": {
+          "keep fit": "maintain physical fitness, sustain a healthy physique || by burning calories, building stamina",
+          "relax": "relieve stress, unwind, release mental tension || after long work/study hours",
+          "improve": "enhance, boost, foster the development of || physical strength, immune system, mood",
+          "save time": "time-efficient, convenient, not time-consuming || for busy professionals, for students",
+          "safe": "secure, low-risk, less likely to cause injury || for beginners, for elderly people"
+        },
+        "exp": {
+          "run": "jog outdoors, go for morning runs, do aerobic running || in the park, for 30 minutes a day",
+          "gym": "hit the gym, work out at fitness centers, do gym workouts || with professional equipment, take group classes",
+          "team sport": "group sports, team-based activities, collaborative sports || basketball, volleyball, football with friends",
+          "walk": "take brisk walks, go for leisurely strolls, commute on foot || after dinner, in the community",
+          "app": "fitness apps, smart fitness applications, workout tracking apps || record exercise data, provide training plans"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "label": "Topic 2 健康与生活习惯 (Health & Wellness)",
+      "entries": {
+        "ideas": {
+          "important": "essential, crucial, of great significance for well-being || for long-term health, for mental stability",
+          "good": "beneficial, wholesome, constructive || for physical function, for emotional balance",
+          "better": "more effective, more beneficial, superior || than unhealthy habits, than irregular routines",
+          "necessary": "indispensable, vital, a must || for preventing diseases, for maintaining vitality",
+          "bad": "detrimental, harmful, unhealthy || to physical health, to mental wellness"
+        },
+        "future": {
+          "keep healthy": "maintain optimal health, sustain well-being, preserve physical fitness || by balanced nutrition, regular rest",
+          "reduce stress": "alleviate stress, relieve mental pressure, ease anxiety || from work/study, from daily life",
+          "prevent illness": "avoid diseases, reduce disease risk, practice preventive care || chronic diseases, common colds",
+          "improve mood": "boost mood, enhance emotional state, lift spirits || through mindfulness, through healthy routines",
+          "save money": "cut medical costs, reduce healthcare expenses, save on treatment fees || in the long run, by avoiding illness"
+        },
+        "exp": {
+          "sleep": "get sufficient sleep, have sound sleep, maintain regular sleep patterns || 7-8 hours a night, go to bed early",
+          "eat healthy": "have a balanced diet, consume nutritious food, adopt healthy eating habits || more vegetables, less processed food",
+          "walk": "take daily walks, go for brisk strolls, walk for wellness || after meals, in the morning",
+          "drink water": "stay hydrated, maintain adequate water intake, drink plenty of water || 8 cups a day, avoid sugary drinks",
+          "meditate": "practice mindfulness, do meditation exercises, engage in mindful breathing || for 10 minutes a day, before bedtime"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "label": "Topic 3 童年教育 (Childhood Education)",
+      "entries": {
+        "ideas": {
+          "important": "vital, fundamental, pivotal for personal development || for formative years, for future success",
+          "good": "beneficial, constructive, conducive to growth || for academic skills, for social development",
+          "better": "more effective, more rewarding, superior || than traditional methods, than passive learning",
+          "necessary": "indispensable, essential, a must || for basic literacy, for life skills",
+          "fun": "enjoyable, engaging, fascinating || for children's interest, for active participation"
+        },
+        "future": {
+          "learn skills": "acquire skills, develop competencies, foster abilities || critical thinking, teamwork, communication",
+          "improve grades": "enhance academic performance, boost grades, achieve better results || through effective teaching, through practice",
+          "make friends": "build friendships, develop social connections, foster peer relationships || with classmates, through group activities",
+          "develop creativity": "stimulate creativity, foster imaginative thinking, enhance creative potential || through art, through hands-on activities",
+          "prepare for future": "lay a foundation for the future, prepare for adult life, equip for future challenges || for career, for independent living"
+        },
+        "exp": {
+          "school": "primary/secondary school, educational institution, academic environment || with qualified teachers, good facilities",
+          "teacher": "instructor, mentor, educational guide || patient, knowledgeable, supportive",
+          "homework": "academic assignments, after-school tasks, practice exercises || reasonable amount, targeted practice",
+          "group project": "collaborative projects, group assignments, team-based tasks || with classmates, on interesting topics",
+          "reading": "recreational reading, extensive reading, book reading || storybooks, educational books, in the library"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "label": "Topic 4 娱乐与电影 (Entertainment & Movies)",
+      "entries": {
+        "ideas": {
+          "good": "entertaining, fascinating, captivating || for relaxation, for emotional release",
+          "fun": "enjoyable, amusing, delightful || to watch with friends, to kill time",
+          "important": "significant, of great value, meaningful || for cultural experience, for social interaction",
+          "better": "more enjoyable, more engaging, superior || than other entertainments, than staying at home",
+          "boring": "dull, uninteresting, tedious || with predictable plots, with poor acting"
+        },
+        "future": {
+          "relax": "unwind, decompress, relieve stress || after work/study, on weekends",
+          "learn things": "gain knowledge, acquire insights, learn from stories || about different cultures, about life lessons",
+          "bond with others": "strengthen relationships, foster connections, enhance social bonds || with family, with friends",
+          "kill time": "pass time, occupy leisure hours, spend free time || in a pleasant way, without boredom",
+          "express emotions": "evoke emotions, stir feelings, express inner thoughts || joy, sadness, excitement through plots"
+        },
+        "exp": {
+          "movie": "film, cinematic work, motion picture || comedy, drama, superhero movies",
+          "cinema": "movie theater, film venue, cinematic theater || with big screen, comfortable seats",
+          "music": "musical works, songs, tunes || pop music, classical music, listen on headphones",
+          "streaming app": "streaming platforms, online video services, on-demand apps || Netflix, YouTube, watch anytime",
+          "concert": "live music concert, live performance, musical show || with favorite singers, in large venues"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "label": "Topic 5 兴趣爱好 (Hobbies & Leisure)",
+      "entries": {
+        "ideas": {
+          "important": "significant, meaningful, of great value || for personal growth, for mental health",
+          "good": "beneficial, rewarding, constructive || for relaxation, for skill development",
+          "fun": "enjoyable, delightful, engaging || to do in leisure time, to share with others",
+          "better": "more fulfilling, more rewarding, superior || than passive activities, than wasting time",
+          "useful": "practical, beneficial, helpful || for work, for daily life, for socializing"
+        },
+        "future": {
+          "relax": "unwind, decompress, relieve mental stress || after busy work/study, on weekends",
+          "develop skills": "acquire skills, foster competencies, enhance abilities || painting, cooking, language skills",
+          "make friends": "build friendships, develop social connections, meet like-minded people || through hobby clubs, group activities",
+          "gain happiness": "experience joy, feel content, get a sense of fulfillment || from achievement, from enjoyment",
+          "enrich life": "diversify life, make life more colorful, add meaning to life || beyond work/study, with new experiences"
+        },
+        "exp": {
+          "read": "recreational reading, extensive reading, book reading || novels, magazines, in the study",
+          "draw": "sketch, paint, create visual art || watercolor, pencil drawing, in spare time",
+          "cook": "prepare meals, engage in culinary activities, cook for pleasure || homemade dishes, try new recipes",
+          "travel": "take trips, travel around, go on journeys || to scenic spots, with family/friends",
+          "play games": "play board games, engage in video games, play recreational games || with friends, online games, for fun"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "label": "Topic 6 通勤与交通 (Commuting & Transport)",
+      "entries": {
+        "ideas": {
+          "convenient": "easily accessible, hassle-free, user-friendly || for daily commute, for short trips",
+          "fast": "quick, time-efficient, rapid || to reach destination, during rush hour",
+          "cheap": "affordable, economical, cost-effective || for students, for daily use",
+          "expensive": "costly, pricey, high-priced || for long-distance trips, for private transport",
+          "good": "efficient, reliable, practical || for daily travel, for large crowds"
+        },
+        "future": {
+          "save time": "reduce travel time, save on commute hours, be time-saving || for busy professionals, for urgent trips",
+          "save money": "cut travel costs, reduce expenses, be economical || compared to private cars, for regular commute",
+          "protect environment": "be eco-friendly, reduce carbon emissions, protect the planet || by using public transport, by cycling",
+          "ensure safety": "guarantee safety, ensure security, be low-risk || for pedestrians, for passengers",
+          "reduce congestion": "alleviate traffic jams, reduce crowding, ease traffic pressure || in city centers, during peak hours"
+        },
+        "exp": {
+          "bus": "public bus, city bus, public transit || with multiple routes, low fare",
+          "car": "private vehicle, automobile, personal car || for family trips, for long distances",
+          "bike": "bicycle, cycle, two-wheeler || for short trips, in residential areas",
+          "walk": "go on foot, walk to destination, commute on foot || for nearby places, after meals",
+          "subway": "metro, underground railway, rapid transit || fast, less affected by traffic"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "label": "Topic 7 个人目标 (Personal Goals)",
+      "entries": {
+        "ideas": {
+          "important": "vital, crucial, pivotal for personal growth || for career development, for self-improvement",
+          "good": "beneficial, rewarding, constructive || for life satisfaction, for skill enhancement",
+          "necessary": "indispensable, essential, a must || for progress, for achieving success",
+          "meaningful": "significant, purposeful, valuable || for personal fulfillment, for making a difference",
+          "difficult": "challenging, demanding, tough || to achieve in short term, to require great effort"
+        },
+        "future": {
+          "improve oneself": "enhance self-development, foster personal growth, promote self-improvement || through learning, through practice",
+          "achieve success": "attain success, reach milestones, accomplish objectives || in career, in study, in personal life",
+          "gain confidence": "boost self-confidence, enhance self-esteem, build confidence || through achievements, through overcoming challenges",
+          "make progress": "make advancements, achieve progress, move forward || step by step, in a steady way",
+          "contribute to others": "help others, make contributions, benefit people around || through professional skills, through kindness"
+        },
+        "exp": {
+          "study hard": "study diligently, work hard at studies, engage in intensive learning || for exams, for professional knowledge",
+          "learn skills": "acquire new skills, master competencies, develop abilities || language skills, professional skills, soft skills",
+          "save money": "accumulate savings, set aside money, build up financial reserves || for travel, for emergencies, for future plans",
+          "exercise regularly": "work out consistently, maintain regular exercise, exercise on a routine basis || for fitness, for health, for energy",
+          "help others": "assist others, offer help, lend a hand || to friends, to strangers, in daily life"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "label": "Topic 8 消费习惯 (Spending Habits)",
+      "entries": {
+        "ideas": {
+          "good": "reasonable, sensible, prudent || for financial stability, for long-term planning",
+          "bad": "impulsive, reckless, irresponsible || for personal finances, for savings",
+          "important": "crucial, significant, vital for financial health || for budget management, for avoiding debt",
+          "better": "more sensible, more prudent, more reasonable || than impulsive spending, than overspending",
+          "necessary": "essential, indispensable, a must || for daily needs, for financial security"
+        },
+        "future": {
+          "save money": "accumulate savings, build up reserves, cut unnecessary expenses || for emergencies, for future goals",
+          "avoid debt": "stay out of debt, prevent financial obligations, avoid borrowing money || credit card debt, personal loans",
+          "get value": "obtain value for money, get worth for spending, receive good returns || for purchases, for services",
+          "manage budget": "handle finances, manage budget effectively, control spending || monthly budget, daily expenses",
+          "reduce waste": "avoid wasteful spending, cut down on unnecessary purchases, reduce extravagance || on luxury goods, on unused items"
+        },
+        "exp": {
+          "shop online": "online shopping, purchase via internet, buy online || on e-commerce platforms, for convenience",
+          "compare prices": "check prices, compare costs, do price comparison || between stores, online and offline",
+          "use cash": "pay in cash, use physical money, make cash payments || for small purchases, to control spending",
+          "use card": "pay by card, use credit/debit cards, make card payments || for large purchases, for convenience",
+          "buy cheap": "purchase affordable items, buy economical products, choose low-cost goods || for daily use, for non-durable items"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "label": "Topic 9 个人理财 (Personal Finance)",
+      "entries": {
+        "ideas": {
+          "important": "crucial, vital, essential for financial security || for future planning, for retirement",
+          "good": "prudent, sensible, effective || for budget management, for wealth accumulation",
+          "necessary": "indispensable, a must, vital || for financial stability, for avoiding crises",
+          "better": "more effective, more prudent, more efficient || than reckless management, than ignoring finances",
+          "risky": "dangerous, hazardous, high-risk || for investments, for financial decisions"
+        },
+        "future": {
+          "save money": "accumulate savings, build financial reserves, set aside funds || for emergencies, for long-term goals",
+          "grow money": "increase wealth, grow financial assets, accumulate wealth || through investments, through savings interest",
+          "avoid risk": "minimize risks, reduce financial hazards, avoid potential losses || in investments, in spending",
+          "manage debt": "handle debt effectively, control financial obligations, repay loans || credit card debt, mortgage loans",
+          "plan future": "prepare for the future, make financial plans, plan for retirement || for old age, for children's education"
+        },
+        "exp": {
+          "budget": "financial budget, spending plan, budget plan || monthly budget, annual budget",
+          "save money": "deposit money, set aside funds, build savings || in banks, in savings accounts",
+          "invest": "make investments, put money into investments, invest funds || in stocks, in real estate, in low-risk products",
+          "track expenses": "monitor spending, record expenses, track costs || via apps, via notebooks, for budget control",
+          "emergency fund": "contingency fund, emergency savings, crisis reserves || for unexpected expenses, for medical bills"
+        }
+      }
+    }
+  ]
+}
