@@ -63,6 +63,17 @@
     .no-copy { user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }
     .no-copy * { user-select: none; -webkit-user-select: none; }
     .set-badge { display: inline-block; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 6px; background: var(--bg); color: var(--muted); margin-left: 0.35rem; }
+    /* 学生端顶栏 */
+    .student-top-nav { position: sticky; top: 0; z-index: 100; background: rgba(255,255,255,0.96); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); margin: -1.5rem -1.5rem 1rem; padding: 0.65rem 1rem; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .student-top-nav button { padding: 0.45rem 0.85rem; font-size: 0.88rem; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); }
+    .student-top-nav button:hover { border-color: var(--accent); }
+    .student-top-nav button.nav-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .student-home-placeholder { min-height: 80px; border: 2px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
+    .student-cover-placeholder { min-height: 160px; border: 2px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
+    .material-text-body { white-space: pre-wrap; font-size: 0.88rem; line-height: 1.55; max-height: min(65vh, 520px); overflow-y: auto; padding: 1rem; background: var(--bg); border-radius: 10px; border: 1px solid var(--border); text-align: left; }
+    .material-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .material-tabs button { padding: 0.45rem 0.75rem; font-size: 0.88rem; }
+    .material-tabs button.tab-active { background: var(--accent); color: #fff; }
   </style>
 </head>
 <body>
@@ -179,6 +190,87 @@
       }
       const PORTAL = detectPortal();
 
+      /** 学生端 · 纸质练习材料（与 standalone 同目录部署） */
+      const STUDENT_MATERIAL_FILES = [
+        { id: 'grammar', title: '语法测试', file: 'grammartestmaterial.text' },
+        { id: 'topic', title: '话题展开', file: 'topicdevelopmenttestmaterial.text' },
+        { id: 'wording', title: '措辞与造句', file: 'wordingtestmaterial.text' }
+      ];
+
+      function resolveMaterialFileUrl(fname) {
+        try {
+          var u = new URL(window.location.href);
+          u.pathname = u.pathname.replace(/[^/]*$/, fname);
+          u.hash = '';
+          u.search = '';
+          return u.href;
+        } catch (e) {
+          return fname;
+        }
+      }
+
+      function getStudentNavActive() {
+        if (PORTAL !== 'student') return 'home';
+        if (state.mainChoice === 'real') return 'bank';
+        if (state.mainChoice === 'studentMaterial') return 'practice';
+        if (
+          state.mainChoice === 'studentTasks' ||
+          state.mainChoice === 'studentTask' ||
+          state.mainChoice === 'transcriptLog'
+        ) {
+          return 'home';
+        }
+        return state.studentNav || 'home';
+      }
+
+      /** 学生顶栏：首页 | 登陆 | 题库 | 练习 */
+      function studentTopNavHtml() {
+        if (PORTAL !== 'student') return '';
+        var activeId = getStudentNavActive();
+        function btn(id, label) {
+          var cl = id === activeId ? 'nav-active' : '';
+          return '<button type="button" class="' + cl + '" data-student-nav="' + id + '">' + label + '</button>';
+        }
+        return (
+          '<nav class="student-top-nav" aria-label="主导航">' +
+          btn('home', '首页') +
+          btn('login', '登陆') +
+          btn('bank', '题库') +
+          btn('practice', '练习') +
+          '</nav>'
+        );
+      }
+
+      function bindStudentTopNav(rootEl) {
+        if (!rootEl || PORTAL !== 'student') return;
+        rootEl.querySelectorAll('[data-student-nav]').forEach(function (b) {
+          b.onclick = function () {
+            var id = b.getAttribute('data-student-nav');
+            state.studentNav = id;
+            if (id === 'bank') {
+              state.mainChoice = 'real';
+              state.practiceBank = null;
+              state.practiceBankLoading = false;
+              state.realTestMode = 'topic';
+              state.realTestCategoryId = null;
+              state.realTestIndex = 0;
+              state.realTestResult = null;
+              state.realTestError = '';
+              state.realWebSpeechLive = '';
+              state.realTencentLive = '';
+            } else if (id === 'practice') {
+              state.mainChoice = 'studentMaterial';
+              if (!state.studentMaterialTab) state.studentMaterialTab = 'grammar';
+            } else if (id === 'home') {
+              state.mainChoice = null;
+            } else if (id === 'login') {
+              state.mainChoice = null;
+            }
+            render();
+          };
+        });
+      }
+
       const SPEAKING_DURATION = 45;
       const READING_DURATION = 10;
       const QUESTIONS_PER_SET = 4;
@@ -227,6 +319,13 @@
       let state = {
         view: 'list',
         mainChoice: null,
+        /** 学生端顶栏：home | login | bank | practice */
+        studentNav: 'home',
+        /** 练习页当前材料：grammar | topic | wording */
+        studentMaterialTab: 'grammar',
+        studentMaterialCache: {},
+        studentMaterialLoading: false,
+        studentMaterialError: '',
         mockPart: null,
         sectionId: null,
         mcqAnswers: {}, mcqScore: 0, transcript: '', editCount: 0, isEditing: false, finalText: '', phase: 'idle', secondsLeft: SPEAKING_DURATION,
@@ -1222,8 +1321,84 @@
           }
         }
 
-        // 未登录：显示登录页
-        if (!currentUser) {
+        // 学生端 · 练习材料（与 standalone 同目录的 .text；登录与否均可）
+        if (PORTAL === 'student' && state.mainChoice === 'studentMaterial') {
+          var navMat = studentTopNavHtml();
+          var tabMat = state.studentMaterialTab || 'grammar';
+          var mfMat =
+            STUDENT_MATERIAL_FILES.find(function (x) {
+              return x.id === tabMat;
+            }) || STUDENT_MATERIAL_FILES[0];
+          var tabsHtmlMat =
+            '<div class="material-tabs">' +
+            STUDENT_MATERIAL_FILES.map(function (m) {
+              var ac = m.id === mfMat.id ? ' tab-active' : '';
+              return '<button type="button" class="' + ac + '" data-mat-tab="' + m.id + '">' + escapeHtml(m.title) + '</button>';
+            }).join('') +
+            '</div>';
+          var cachedMat = state.studentMaterialCache[mfMat.id];
+          if (cachedMat == null && !state.studentMaterialError) {
+            if (!state.studentMaterialLoading) {
+              state.studentMaterialLoading = true;
+              fetch(resolveMaterialFileUrl(mfMat.file), { cache: 'default' })
+                .then(function (r) {
+                  if (!r.ok) throw new Error('HTTP ' + r.status);
+                  return r.text();
+                })
+                .then(function (text) {
+                  state.studentMaterialCache[mfMat.id] = text;
+                  state.studentMaterialLoading = false;
+                  state.studentMaterialError = '';
+                  render();
+                })
+                .catch(function () {
+                  state.studentMaterialLoading = false;
+                  state.studentMaterialError =
+                    '无法加载 ' + mfMat.file + '（请将该文件与 standalone 放在同一目录并部署）';
+                  render();
+                });
+            }
+          }
+          var bodyMat;
+          if (state.studentMaterialCache[mfMat.id] != null) {
+            bodyMat = '<div class="material-text-body">' + escapeHtml(state.studentMaterialCache[mfMat.id]) + '</div>';
+          } else if (state.studentMaterialError) {
+            bodyMat =
+              '<p style="color:var(--wrong)">' +
+              escapeHtml(state.studentMaterialError) +
+              '</p><button type="button" class="primary" style="margin-top:0.75rem" id="btnMatRetry">重试</button>';
+          } else {
+            bodyMat = '<p style="color:var(--muted)">正在加载…</p>';
+          }
+          root.innerHTML =
+            navMat +
+            '<div class="card"><h2 style="margin:0 0 0.5rem">练习</h2><p style="color:var(--muted);font-size:0.9rem;margin:0">语法测试 · 话题展开 · 措辞与造句（纸质材料预览）。</p></div>' +
+            '<div class="card">' +
+            tabsHtmlMat +
+            bodyMat +
+            '</div>';
+          bindStudentTopNav(root);
+          root.querySelectorAll('[data-mat-tab]').forEach(function (bt) {
+            bt.onclick = function () {
+              state.studentMaterialTab = bt.getAttribute('data-mat-tab');
+              state.studentMaterialError = '';
+              render();
+            };
+          });
+          var rMat = document.getElementById('btnMatRetry');
+          if (rMat) {
+            rMat.onclick = function () {
+              state.studentMaterialError = '';
+              delete state.studentMaterialCache[mfMat.id];
+              state.studentMaterialLoading = false;
+              render();
+            };
+          }
+          return;
+        }
+
+        // 未登录：教师端 = 原登录页；学生端 = 顶栏 + 首页/登陆/题库
+        if (!currentUser && PORTAL === 'teacher') {
           var portalLabel = PORTAL === 'teacher' ? '教师端' : '学生端';
           var teacherCodeRow = PORTAL === 'teacher'
             ? '<label for="loginTeacherCode">教师注册口令（首次注册教师账号必填，在 server/.env 配置 TEACHER_REGISTER_SECRET）</label><input type="password" id="loginTeacherCode" placeholder="口令" autocomplete="off">'
@@ -1441,6 +1616,154 @@
           return;
         }
 
+        // 未登录 · 学生端：顶栏 + 首页 / 登陆 / 题库（练习走 mainChoice studentMaterial，见上文）
+        if (!currentUser && PORTAL === 'student') {
+          if (state.studentNav === 'home') {
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card">' +
+              '<div class="student-home-placeholder">Logo（预留）</div>' +
+              '<div class="student-cover-placeholder">封面图（预留）</div>' +
+              '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">使用顶部导航：「登陆」后可用题库与作业；「练习」可浏览纸质材料（无需登录）。</p>' +
+              '</div>';
+            bindStudentTopNav(root);
+            return;
+          }
+          if (state.studentNav === 'bank') {
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card"><h2 style="margin:0 0 0.5rem">题库</h2><p style="color:var(--muted);margin:0">Interview 口语题库需<strong>登录</strong>后使用。请点击顶部「登陆」。</p></div>';
+            bindStudentTopNav(root);
+            return;
+          }
+          if (state.studentNav === 'login') {
+            var stNote =
+              '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">首次使用请先<strong>注册</strong>（用户名即身份，教师布置作业时「学生姓名」须与此一致）。</p>';
+            var stReg =
+              '<div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)"><h3 style="font-size:1rem;margin:0 0 0.5rem">注册新账号</h3><label for="regName">用户名</label><input type="text" id="regName" class="fill-input" style="margin-top:0.35rem" placeholder="2～48 字，中文/字母/数字/._-" autocomplete="off"><label for="regPwd" style="margin-top:0.75rem;display:block">密码</label><input type="password" id="regPwd" placeholder="至少 4 位" autocomplete="new-password"><button type="button" class="primary" style="margin-top:0.75rem" id="btnRegisterStudent">注册</button></div>';
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card login-card">' +
+              '<h2>登录</h2>' +
+              stNote +
+              '<label for="loginName">用户名</label><input type="text" id="loginName" placeholder="注册时使用的用户名" autocomplete="username">' +
+              '<label for="loginPwd">密码</label><input type="password" id="loginPwd" placeholder="密码" autocomplete="current-password">' +
+              '<button type="button" class="primary btn-login" id="btnLogin">登录</button>' +
+              '<button type="button" class="btn-login" id="btnOffline">离线登录（不连接后端）</button>' +
+              stReg +
+              '<p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">账号数据存于 Node（' +
+              escapeHtml(API_NODE) +
+              '）；部署后请在 Supabase 执行 <code>supabase-portal-student-v1.sql</code>。</p>' +
+              '</div>';
+            bindStudentTopNav(root);
+            var btnReg2 = document.getElementById('btnRegisterStudent');
+            if (btnReg2) {
+              btnReg2.onclick = function () {
+                var rn = (document.getElementById('regName') && document.getElementById('regName').value || '').trim();
+                var rp = (document.getElementById('regPwd') && document.getElementById('regPwd').value || '').trim();
+                if (!rn || !rp) {
+                  alert('请填写注册用户名与密码');
+                  return;
+                }
+                if (!API_NODE) {
+                  alert('未配置 API_NODE，无法注册');
+                  return;
+                }
+                btnReg2.disabled = true;
+                fetch(API_NODE + '/api/auth/register-student', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ username: rn, password: rp })
+                })
+                  .then(function (r) {
+                    return r.json();
+                  })
+                  .then(function (data) {
+                    btnReg2.disabled = false;
+                    if (data && data.ok) {
+                      alert('注册成功，请用该用户名登录。');
+                      var ln = document.getElementById('loginName');
+                      var lp = document.getElementById('loginPwd');
+                      if (ln) ln.value = rn;
+                      if (lp) lp.value = rp;
+                    } else {
+                      alert((data && data.message) || '注册失败');
+                    }
+                  })
+                  .catch(function () {
+                    btnReg2.disabled = false;
+                    alert('无法连接后端');
+                  });
+              };
+            }
+            document.getElementById('btnOffline').onclick = function () {
+              var offName = (document.getElementById('loginName') && document.getElementById('loginName').value || '').trim();
+              if (!offName) {
+                alert('请先输入用户名，或使用在线登录');
+                return;
+              }
+              setCurrentUser(offName);
+              setCurrentRole('student');
+              setInterviewGradingApproved(false);
+              state.view = 'list';
+              state.studentNav = 'home';
+              persistSpeakingView('list');
+              render();
+            };
+            document.getElementById('btnLogin').onclick = function () {
+              var name = (document.getElementById('loginName').value || '').trim();
+              var pwd = (document.getElementById('loginPwd').value || '').trim();
+              if (!name) {
+                alert('请输入用户名');
+                return;
+              }
+              if (API_NODE && !pwd) {
+                alert('请输入密码');
+                return;
+              }
+              if (API_NODE) {
+                fetch(API_NODE + '/api/auth/login', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ username: name, password: pwd, expectedRole: 'student', teacherCode: '' })
+                })
+                  .then(function (r) {
+                    return r.json();
+                  })
+                  .then(function (data) {
+                    if (data && data.ok) {
+                      setCurrentUser(data.username);
+                      setCurrentRole('student');
+                      setSessionPassword(pwd);
+                      setInterviewGradingApproved(!!data.interviewGradingApproved);
+                      state.view = 'list';
+                      state.studentNav = 'home';
+                      persistSpeakingView('list');
+                      render();
+                    } else {
+                      alert((data && data.message) || '登录失败');
+                    }
+                  })
+                  .catch(function () {
+                    alert('无法连接后端');
+                  });
+                return;
+              }
+              setCurrentUser(name);
+              setCurrentRole('student');
+              setInterviewGradingApproved(false);
+              state.view = 'list';
+              state.studentNav = 'home';
+              persistSpeakingView('list');
+              render();
+            };
+            return;
+          }
+          state.studentNav = 'home';
+          render();
+          return;
+        }
+
         // 已登录时顶栏右侧：当前用户 + 退出
         function headerRight() {
           var line = escapeHtml(currentUser);
@@ -1581,38 +1904,71 @@
           return;
         }
 
-        // 已登录：学生端门户首页（题库练习 / 作业 / LNR / 转写记录）
+        // 已登录：学生端首页（顶栏：首页 / 登陆 / 题库 / 练习）
         if (state.view === 'list' && state.mainChoice === null && PORTAL === 'student') {
-          root.innerHTML = `
-            <div class="header" style="flex-wrap:wrap;gap:0.5rem"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem">${headerHubBtn()}<h1 style="margin:0">学生端 · 门户</h1></div><div class="header-right">${headerRight()}</div></div>
-            <p style="color:var(--muted);margin-bottom:1rem">登录名即<strong>学生身份</strong>，教师布置作业时填写的「学生姓名」须与注册名<strong>完全一致</strong>。Interview <strong>实时转写</strong>在线登录即可同步教师端；云端批改需教师另开通。Listen &amp; Repeat 评测无需申请。</p>
-            <div class="main-choice">
-              <div class="card" data-action="stuPortal" data-stu="real">
-                <h2>Interview · 题库练习</h2>
-                <p>浏览全部 Interview 题库，自主选题练习（云端评测需教师开通；否则请用页内实时转写）。</p>
-                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
-              </div>
-              <div class="card" data-action="stuPortal" data-stu="tasks">
-                <h2>我的作业</h2>
-                <p>查看并完成教师下发的 Interview / Listen &amp; Repeat 作业。</p>
-                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
-              </div>
-              <div class="card" data-action="stuPortal" data-stu="lnr">
-                <h2>Listen &amp; Repeat</h2>
-                <p>跟读与智聆评测：<strong>完全开放</strong>，无需教师开通云端批改。</p>
-                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
-              </div>
-              <div class="card" data-action="stuPortal" data-stu="transcript">
-                <h2>转写记录</h2>
-                <p>保存浏览器语音转写片段，便于复制到其他 AI。</p>
-                <button type="button" class="primary" style="margin-top:0.5rem">进入</button>
-              </div>
-            </div>
-          `;
+          var stNav = studentTopNavHtml();
+          var stHead =
+            '<div style="display:flex;justify-content:flex-end;align-items:center;margin:0 0 1rem;flex-wrap:wrap;gap:0.5rem">' +
+            headerRight() +
+            '</div>';
+          if (state.studentNav === 'login') {
+            root.innerHTML =
+              stNav +
+              stHead +
+              '<div class="card"><h2 style="margin:0 0 0.5rem">账号</h2><p>当前登录：<strong>' +
+              escapeHtml(currentUser) +
+              '</strong></p><p style="color:var(--muted);font-size:0.9rem;margin-top:0.75rem">Interview 云端批改：' +
+              (getInterviewGradingApproved() ? '已开通' : '未开通') +
+              '</p></div>';
+            bindStudentTopNav(root);
+            root.querySelector('[data-action=logout]').onclick = function () {
+              clearCurrentUser();
+              stopStudentReadTimer();
+              state.view = 'list';
+              state.mainChoice = null;
+              state.studentNav = 'home';
+              state.mockPart = null;
+              render();
+            };
+            return;
+          }
+          root.innerHTML =
+            stNav +
+            stHead +
+            '<div class="card">' +
+            '<div class="student-home-placeholder">Logo（预留）</div>' +
+            '<div class="student-cover-placeholder">封面图（预留）</div>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">登录名即学生身份；Interview 实时转写在线登录后可同步教师端。</p>' +
+            '</div>' +
+            '<p style="color:var(--muted);margin-bottom:0.75rem;font-size:0.9rem">快捷入口</p>' +
+            '<div class="main-choice">' +
+            '<div class="card" data-action="stuPortal" data-stu="real">' +
+            '<h2>Interview · 题库练习</h2>' +
+            '<p>浏览 Interview 题库并录音练习。</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
+            '</div>' +
+            '<div class="card" data-action="stuPortal" data-stu="tasks">' +
+            '<h2>我的作业</h2>' +
+            '<p>教师下发的 Interview / Listen &amp; Repeat 作业。</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
+            '</div>' +
+            '<div class="card" data-action="stuPortal" data-stu="lnr">' +
+            '<h2>Listen &amp; Repeat</h2>' +
+            '<p>跟读与智聆评测。</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
+            '</div>' +
+            '<div class="card" data-action="stuPortal" data-stu="transcript">' +
+            '<h2>转写记录</h2>' +
+            '<p>保存语音转写片段。</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
+            '</div>' +
+            '</div>';
+          bindStudentTopNav(root);
           root.querySelectorAll('[data-action=stuPortal]').forEach(function (card) {
             card.onclick = function () {
               var st = card.getAttribute('data-stu');
               if (st === 'real') {
+                state.studentNav = 'bank';
                 state.mainChoice = 'real';
                 state.practiceBank = null;
                 state.practiceBankLoading = false;
@@ -1622,6 +1978,7 @@
                 state.realTestResult = null;
                 state.realTestError = '';
                 state.realWebSpeechLive = '';
+                state.realTencentLive = '';
               } else if (st === 'tasks') {
                 state.mainChoice = 'studentTasks';
                 state.studentAssignments = null;
@@ -1636,20 +1993,12 @@
               render();
             };
           });
-          var toHubEl = root.querySelector('[data-action=toHub]');
-          if (toHubEl) {
-            toHubEl.onclick = function () {
-              state.view = 'hub';
-              state.mainChoice = null;
-              persistSpeakingView('hub');
-              render();
-            };
-          }
           root.querySelector('[data-action=logout]').onclick = function () {
             clearCurrentUser();
             stopStudentReadTimer();
             state.view = 'list';
             state.mainChoice = null;
+            state.studentNav = 'home';
             state.mockPart = null;
             render();
           };
@@ -2959,15 +3308,21 @@
 
           var isInterviewQ = cur.mode !== 'listenRepeat';
           var liveTransHtml = '';
-          if (!completed && isInterviewQ) {
+          if (!completed && isInterviewQ && !(PORTAL === 'student' && state.realTestRecording)) {
             liveTransHtml =
-              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3><p style="color:var(--muted);font-size:0.85rem">在线登录时同步教师端「Interview · 实时转写」。</p>' +
+              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3><p style="color:var(--muted);font-size:0.85rem">' +
+              (PORTAL === 'student'
+                ? '停止录音后显示；在线登录时同步教师端「Interview · 实时转写」。'
+                : '在线登录时同步教师端「Interview · 实时转写」。') +
+              '</p>' +
               '<div id="realWebSpeechBox" class="transcript-box">' +
-              (escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示）') +
+              (escapeHtml(state.realWebSpeechLive || '') ||
+                (PORTAL === 'student' ? '（停止录音后显示）' : '（开始录音后显示）')) +
               '</div></div>' +
               '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3><p style="color:var(--muted);font-size:0.85rem">需 server 配置 TENCENT_ASR_*。</p>' +
               '<div id="realTencentBox" class="transcript-box">' +
-              (escapeHtml(state.realTencentLive || '') || '（录音中显示）') +
+              (escapeHtml(state.realTencentLive || '') ||
+                (PORTAL === 'student' ? '（停止录音后显示）' : '（录音中显示）')) +
               '</div></div>';
           }
 
@@ -3378,6 +3733,7 @@
 
         // ---------- 题目练习：按话题/按设问方式抽题并录音评测 ----------
         if (state.mainChoice === 'real') {
+          var stNavPre = PORTAL === 'student' ? studentTopNavHtml() : '';
           // 1) 首次进入：拉取题库（从 docx 抽取并返回前端可用结构）
           if (!state.practiceBank && !state.practiceBankLoading) {
             state.practiceBankLoading = true;
@@ -3401,7 +3757,9 @@
           }
 
           if (!state.practiceBank) {
-            root.innerHTML = `
+            root.innerHTML =
+              stNavPre +
+              `
               <div class="header"><h1>题目练习</h1><div class="header-right"><button data-action="backMain">返回</button> ${headerRight()}</div></div>
               <div class="card">
                 <h2>正在加载题库…</h2>
@@ -3409,10 +3767,12 @@
                 ${state.practiceBankError ? '<button class="primary" style="margin-top:0.75rem" data-action="retryPracticeBank">重试加载</button>' : ''}
               </div>
             `;
+            if (PORTAL === 'student') bindStudentTopNav(root);
             root.querySelector('[data-action=backMain]').onclick = function () {
               stopTencentRealtimeAsr();
               stopRealPracticeSpeech();
               state.mainChoice = null;
+              if (PORTAL === 'student') state.studentNav = 'home';
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
               state.realTestIndex = 0;
@@ -3439,7 +3799,9 @@
 
           // 未选小类：显示小类列表
           if (!state.realTestCategoryId) {
-            root.innerHTML = `
+            root.innerHTML =
+              stNavPre +
+              `
               <div class="header"><h1>题目练习</h1><div class="header-right"><button data-action="backMain">返回</button> ${headerRight()}</div></div>
               <div class="card" style="margin-bottom:1rem">
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
@@ -3465,6 +3827,7 @@
               stopTencentRealtimeAsr();
               stopRealPracticeSpeech();
               state.mainChoice = null;
+              if (PORTAL === 'student') state.studentNav = 'home';
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
               state.realTestIndex = 0;
@@ -3476,6 +3839,7 @@
               state.realTencentLive = '';
               render();
             };
+            if (PORTAL === 'student') bindStudentTopNav(root);
 
             root.querySelectorAll('[data-action=switchMode]').forEach(function (btn) {
               btn.onclick = function () {
@@ -3504,15 +3868,23 @@
           const cat = (categories || []).find(function (c) { return c.id === state.realTestCategoryId; });
           const qs = cat && cat.questions ? cat.questions : [];
           if (!qs.length) {
-            root.innerHTML = `
+            root.innerHTML =
+              stNavPre +
+              `
               <div class="header"><h1>题目练习</h1><div class="header-right"><button data-action="backCategory">返回小类</button> ${headerRight()}</div></div>
               <div class="card">
                 <p style="color:var(--muted);margin-top:0.5rem">该小类暂时没有题目。</p>
                 <button class="primary" style="margin-top:1rem" data-action="backCategory">返回</button>
               </div>
             `;
+            if (PORTAL === 'student') bindStudentTopNav(root);
             root.querySelectorAll('[data-action=backCategory]').forEach(function (b) {
-              b.onclick = function () { state.realTestCategoryId = null; state.realTestIndex = 0; render(); };
+              b.onclick = function () {
+                state.realTestCategoryId = null;
+                state.realTestIndex = 0;
+                if (PORTAL === 'student') state.studentNav = 'home';
+                render();
+              };
             });
             return;
           }
@@ -3558,15 +3930,58 @@
             PORTAL === 'student'
               ? getInterviewGradingApproved()
                 ? '<p style="color:var(--correct);font-size:0.9rem;margin-top:0.5rem">你已开通 Interview 云端评测：停止录音后将经服务器做 ASR+批改。</p>'
-                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，仍可使用下方<strong>实时转写</strong>；在线登录时转写会同步到教师端「Interview · 实时转写」。</p>'
+                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，停止录音后将尝试云端评测；录音过程中不显示实时转写。</p>'
               : '';
           var stuPrompt =
             PORTAL === 'student'
               ? '用英文作答约 45 秒。点击「开始录音」后说话；停止后将' +
-                (getInterviewGradingApproved() ? '提交云端评测。' : '尝试云端评测（未开通则见提示）；实时转写可先用于练习与教师同步。')
+                (getInterviewGradingApproved() ? '提交云端评测。' : '尝试云端评测（未开通则见提示）。')
               : '请根据下面的提示，用英文作答（45 秒左右），点击「开始录音」后开始说，结束后系统会把音频上传到后端做 ASR + 口语评测。';
 
-          root.innerHTML = `
+          var transcriptBlockReal;
+          if (PORTAL === 'student' && recording) {
+            transcriptBlockReal = '';
+          } else if (PORTAL === 'student') {
+            transcriptBlockReal =
+              '<div class="card">' +
+              '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3>' +
+              '<p style="color:var(--muted);font-size:0.85rem">停止录音后显示；可加入转写记录。</p>' +
+              '<div id="realWebSpeechBox" class="transcript-box">' +
+              (escapeHtml(state.realWebSpeechLive || '') || '（停止录音后显示）') +
+              '</div>' +
+              '<button type="button" class="primary" style="margin-top:0.5rem" id="btnRealSaveTranscript">将当前转写加入记录</button>' +
+              '</div>' +
+              '<div class="card">' +
+              '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>' +
+              '<p style="color:var(--muted);font-size:0.85rem">停止录音后显示；需在 server 配置 <code>TENCENT_ASR_*</code>。</p>' +
+              '<div id="realTencentBox" class="transcript-box">' +
+              (escapeHtml(state.realTencentLive || '') || '（停止录音后显示）') +
+              '</div>' +
+              '<button type="button" class="primary" style="margin-top:0.5rem" id="btnTencentSaveTranscript">将腾讯云转写加入记录</button>' +
+              '</div>';
+          } else {
+            transcriptBlockReal =
+              '<div class="card">' +
+              '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3>' +
+              '<p style="color:var(--muted);font-size:0.85rem">录音时自动识别（英文），不依赖云端批改权限，可配合复制到其他 AI。</p>' +
+              '<div id="realWebSpeechBox" class="transcript-box">' +
+              (escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示，建议 Chrome / Edge）') +
+              '</div>' +
+              '<button type="button" class="primary" style="margin-top:0.5rem" id="btnRealSaveTranscript">将当前转写加入记录</button>' +
+              '</div>' +
+              '<div class="card">' +
+              '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>' +
+              '<p style="color:var(--muted);font-size:0.85rem">浏览器直连腾讯云 WebSocket；需在 server/.env 配置 <code>TENCENT_ASR_*</code>。凡在线登录学生均可使用（与云端批改开通无关）；在线登录时内容同步教师端。</p>' +
+              '<div id="realTencentBox" class="transcript-box">' +
+              (escapeHtml(state.realTencentLive || '') || '（服务端配置 ASR 后，录音中显示）') +
+              '</div>' +
+              '<button type="button" class="primary" style="margin-top:0.5rem" id="btnTencentSaveTranscript">将腾讯云转写加入记录</button>' +
+              '</div>';
+          }
+
+          root.innerHTML =
+            stNavPre +
+            `
             <div class="header"><h1>题目练习 · ${escapeHtml(modeTitle)} · ${escapeHtml(cat.title || '')}</h1><div class="header-right"><button data-action="backCategory">返回小类</button> ${headerRight()}</div></div>
             ${navHtml}
             <div class="card">
@@ -3585,22 +4000,12 @@
                 录音时请保持网络畅通。若浏览器首次弹窗，请允许访问麦克风。
               </p>
             </div>
-            <div class="card">
-              <h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3>
-              <p style="color:var(--muted);font-size:0.85rem">录音时自动识别（英文），不依赖云端批改权限，可配合复制到其他 AI。</p>
-              <div id="realWebSpeechBox" class="transcript-box">${escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示，建议 Chrome / Edge）'}</div>
-              <button type="button" class="primary" style="margin-top:0.5rem" id="btnRealSaveTranscript">将当前转写加入记录</button>
-            </div>
-            <div class="card">
-              <h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>
-              <p style="color:var(--muted);font-size:0.85rem">浏览器直连腾讯云 WebSocket；需在 server/.env 配置 <code>TENCENT_ASR_*</code>。凡在线登录学生均可使用（与云端批改开通无关）；在线登录时内容同步教师端。</p>
-              <div id="realTencentBox" class="transcript-box">${escapeHtml(state.realTencentLive || '') || '（服务端配置 ASR 后，录音中显示）'}</div>
-              <button type="button" class="primary" style="margin-top:0.5rem" id="btnTencentSaveTranscript">将腾讯云转写加入记录</button>
-            </div>
+            ${transcriptBlockReal}
             ${statusHtml}
             ${errorHtml}
             ${resultHtml}
           `;
+          if (PORTAL === 'student') bindStudentTopNav(root);
 
           root.querySelector('[data-action=backCategory]').onclick = function () {
             if (realTestTimerId) { clearInterval(realTestTimerId); realTestTimerId = null; }
@@ -3617,6 +4022,7 @@
             state.realTestResult = null;
             state.realWebSpeechLive = '';
             state.realTencentLive = '';
+            if (PORTAL === 'student') state.studentNav = 'home';
             render();
           };
 
