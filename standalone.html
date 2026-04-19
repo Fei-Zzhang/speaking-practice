@@ -156,9 +156,19 @@
           u.pathname = dir + folder + '/index.html';
           u.searchParams.set('portal', portal);
           u.searchParams.set('from', 'standalone');
+          // 与作业链接一致：LNR 页默认 localhost，线上必须带 Node/Python 地址，否则智聆评测会请求本机 5001 失败
+          u.searchParams.set('apiNode', API_NODE);
+          u.searchParams.set('apiPython', API_PYTHON);
           return u.href;
         } catch (e) {
-          return 'Listen%26Repeat%E7%BB%83%E4%B9%A0/index.html?portal=' + encodeURIComponent(portal) + '&from=standalone';
+          return (
+            'Listen%26Repeat%E7%BB%83%E4%B9%A0/index.html?portal=' +
+            encodeURIComponent(portal) +
+            '&from=standalone&apiNode=' +
+            encodeURIComponent(API_NODE) +
+            '&apiPython=' +
+            encodeURIComponent(API_PYTHON)
+          );
         }
       }
 

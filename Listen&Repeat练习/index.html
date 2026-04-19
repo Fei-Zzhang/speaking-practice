@@ -755,13 +755,13 @@
     (function parseAssignmentQuery() {
       try {
         var q = new URLSearchParams(window.location.search || '');
+        var an = q.get('apiNode');
+        if (an) API_NODE_ASSIGN = an;
+        var ap = q.get('apiPython');
+        if (ap) ORAL_API_BASE = ap;
         if (q.get('assignmentMode') === '1' && q.get('assignmentId')) {
           ASSIGNMENT_MODE = true;
           ASSIGNMENT_ID = q.get('assignmentId');
-          var an = q.get('apiNode');
-          if (an) API_NODE_ASSIGN = an;
-          var ap = q.get('apiPython');
-          if (ap) ORAL_API_BASE = ap;
         }
       } catch (e) {}
     })();
@@ -1827,7 +1827,10 @@
           submitAssignmentAudioToNode(blob, bookmarkListenSec);
         }).catch(function () {
           restoreListeningAudioTime(bookmarkListenSec);
-          statusEl.textContent = '无法连接语音评测后端，请确认本机后端已运行。';
+          statusEl.textContent =
+            '无法连接语音评测（' +
+            ORAL_API_BASE +
+            '）。本机请运行 oral-python-backend；线上请从主站「进入 LNR」或在地址栏为页面加上 apiPython= 你的 Python 服务地址。';
         });
       }, 200);
     });
