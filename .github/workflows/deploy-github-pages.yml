@@ -11,6 +11,8 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # deploy-pages 拉取 artifact 时部分环境需要（避免 pages-build-deployment 失败）
+  actions: read
 
 concurrency:
   group: pages
@@ -39,10 +41,9 @@ jobs:
           find _site -type f | wc -l
 
       - uses: actions/configure-pages@v5
-      # v4 默认不包含以 . 开头的文件，需显式包含 .nojekyll
-      - uses: actions/upload-pages-artifact@v4
+      # 与 deploy-pages@v4 搭配时，upload-pages-artifact 用 v3 更稳定（v4+v4 组合曾出现 artifact 无法部署）
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-          include-hidden-files: true
       - id: deployment
         uses: actions/deploy-pages@v4
