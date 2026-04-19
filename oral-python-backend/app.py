@@ -5,6 +5,8 @@ Real Test 口语评测后端（Python）
 """
 import os
 import re
+import shutil
+import subprocess
 
 # 若 ffmpeg/ffprobe 放在本项目同目录下，加入 PATH，方便 pydub 找到
 _APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -68,6 +70,13 @@ def api_health():
         sdk_ok = True
     except ImportError:
         pass
+    pydub_ok = False
+    try:
+        import pydub  # noqa: F401
+
+        pydub_ok = True
+    except ImportError:
+        pass
     return jsonify(
         ok=True,
         service="oral-python-backend",
@@ -77,8 +86,103 @@ def api_health():
         soe_configured=bool(
             TENCENT_APP_ID and TENCENT_SECRET_ID and TENCENT_SECRET_KEY
         ),
-        hint="若 asr_* 为 false：检查 oral-python-backend/.env 变量名与路径；若 sdk 为 false：pip install tencentcloud-sdk-python",
+        ffmpeg_path=shutil.which("ffmpeg") or "",
+        ffprobe_path=shutil.which("ffprobe") or "",
+        pydub_import_ok=pydub_ok,
+        hint="若 asr_* 为 false：检查 oral-python-backend/.env 变量名与路径；若 sdk 为 false：pip install tencentcloud-sdk-python；oral-eval 转码需 ffmpeg+ffprobe（Dockerfile 已含）",
     )
+
+
+def _which_ffmpeg():
+    return shutil.which("ffmpeg")
+
+
+def _which_ffprobe():
+    return shutil.which("ffprobe")
+
+
+def _ffmpeg_stdin_to_wav_16k_mono_try_formats(audio_bytes: bytes):
+    """依次尝试让 ffmpeg 猜测格式 / 指定 webm，提高浏览器 WebM 兼容性。"""
+    ff = _which_ffmpeg()
+    if not ff:
+        return None, "未找到 ffmpeg"
+    attempts = [
+        (["-i", "pipe:0"], audio_bytes),
+        (["-f", "webm", "-i", "pipe:0"], audio_bytes),
+        (["-f", "matroska", "-i", "pipe:0"], audio_bytes),
+    ]
+    last_err = None
+    for extra_pre, data in attempts:
+        try:
+            args = [ff, "-hide_banner", "-loglevel", "error"] + extra_pre
+            args += [
+                "-f",
+                "wav",
+                "-acodec",
+                "pcm_s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "pipe:1",
+            ]
+            proc = subprocess.run(args, input=data, capture_output=True, timeout=120)
+            stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
+            if proc.returncode == 0 and (proc.stdout or b"") and len(proc.stdout) > 100:
+                return proc.stdout, None
+            last_err = stderr[:900] or f"exit {proc.returncode}"
+        except Exception as e:
+            last_err = str(e)
+            continue
+    return None, last_err or "ffmpeg 无法解码该音频"
+
+
+def _browser_audio_bytes_to_wav_16k_mono(audio_bytes: bytes):
+    """
+    浏览器上传的 webm/weba 等 → 16k 单声道 wav bytes。
+    返回 (wav_bytes|None, error_str|None)。
+    """
+    if not _which_ffmpeg() or not _which_ffprobe():
+        return None, (
+            "服务器未找到 ffmpeg 或 ffprobe，无法将浏览器 WebM 转为 WAV。"
+            " 本机请执行：brew install ffmpeg（Windows：choco install ffmpeg）。"
+            " 云部署请使用仓库 oral-python-backend/Dockerfile（已 apt 安装 ffmpeg），"
+            " 勿仅用 pip install 而不装系统级 ffmpeg。"
+        )
+    try:
+        import io
+
+        from pydub import AudioSegment
+    except ImportError:
+        AudioSegment = None  # type: ignore
+
+    last_pydub = None
+    if AudioSegment is not None:
+        buf = io.BytesIO(audio_bytes)
+        for fmt in ("webm", "matroska", "ogg", None):
+            try:
+                buf.seek(0)
+                seg = AudioSegment.from_file(buf, format=fmt)
+                seg = seg.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+                out = io.BytesIO()
+                seg.export(out, format="wav")
+                w = out.getvalue()
+                if len(w) > 100:
+                    return w, None
+            except Exception as e:
+                last_pydub = e
+                continue
+
+    w2, err2 = _ffmpeg_stdin_to_wav_16k_mono_try_formats(audio_bytes)
+    if w2:
+        return w2, None
+
+    parts = []
+    if last_pydub:
+        parts.append("pydub：" + str(last_pydub)[:400])
+    if err2:
+        parts.append("ffmpeg：" + str(err2)[:500])
+    return None, " | ".join(parts) if parts else "音频转码失败"
 
 
 def _extract_first_json_list(s: str):
@@ -751,36 +855,16 @@ def oral_eval():
         voice_format = 2
     elif filename.endswith(".wav"):
         voice_format = 1
-    elif filename.endswith(".webm") or filename.endswith(".weba") or "webm" in (request.content_type or ""):
-        # 用 pydub + ffmpeg 转成 wav 再发；Safari 可能传 mp4，先试 webm 再试自动检测
-        try:
-            import io
-            from pydub import AudioSegment
-            buf = io.BytesIO(audio_bytes)
-            seg = None
-            for fmt in ("webm", None):
-                try:
-                    buf.seek(0)
-                    seg = AudioSegment.from_file(buf, format=fmt)
-                    break
-                except Exception:
-                    if fmt is None:
-                        raise RuntimeError("无法识别音频格式，请使用 Chrome/Edge 录制或重试。")
-            seg = seg.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-            out = io.BytesIO()
-            seg.export(out, format="wav")
-            audio_bytes = out.getvalue()
-            voice_format = 1
-        except Exception as e:
-            err = str(e)
-            if "ffprobe" in err or "ffmpeg" in err or "No such file" in err:
-                tip = "请先安装 ffmpeg（含 ffprobe）。macOS 可到 https://evermeet.cx/ffmpeg/ 下载后解压到项目目录或加入 PATH。"
-            else:
-                tip = "请安装 ffmpeg 与 pydub：pip install pydub，并确保 ffmpeg/ffprobe 可用。"
-            return jsonify(
-                ok=False,
-                error="音频转 wav 失败：" + err + "。" + tip,
-            ), 400
+    elif (
+        filename.endswith(".webm")
+        or filename.endswith(".weba")
+        or "webm" in (request.content_type or "")
+    ):
+        wav_b, conv_err = _browser_audio_bytes_to_wav_16k_mono(audio_bytes)
+        if conv_err or not wav_b:
+            return jsonify(ok=False, error="音频转 wav 失败：" + (conv_err or "未知错误")), 400
+        audio_bytes = wav_b
+        voice_format = 1
 
     result, err = _call_soe_websocket(
         audio_bytes,
@@ -869,25 +953,17 @@ def asr_eval():
     if len(audio_bytes) < 100:
         return jsonify(ok=False, error="音频数据过短或为空，请重新上传。"), 400
 
-    # 若是 webm/m4a 等格式，先用 ffmpeg+pydub 转成 16k 单声道 wav
+    # 若是 webm/m4a 等格式，先用 ffmpeg（及 pydub 可选）转成 16k 单声道 wav
     filename = (audio.filename or "").lower()
     voice_ext = "wav"
     pcm_bytes = audio_bytes
-    if any(ext in filename for ext in (".webm", ".weba", ".m4a")):
-        try:
-            import io
-            from pydub import AudioSegment
-
-            buf = io.BytesIO(audio_bytes)
-            # 让 ffmpeg 自动识别格式
-            seg = AudioSegment.from_file(buf)
-            seg = seg.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-            out = io.BytesIO()
-            seg.export(out, format="wav")
-            pcm_bytes = out.getvalue()
-            voice_ext = "wav"
-        except Exception as e:
-            return jsonify(ok=False, error=f"音频转 wav 失败：{e}"), 400
+    if any(ext in filename for ext in (".webm", ".weba", ".m4a")) or "webm" in (
+        request.content_type or ""
+    ):
+        pcm_bytes, conv_err = _browser_audio_bytes_to_wav_16k_mono(audio_bytes)
+        if conv_err or not pcm_bytes:
+            return jsonify(ok=False, error="音频转 wav 失败：" + (conv_err or "")), 400
+        voice_ext = "wav"
     else:
         # mp3/wav 等 ASR 支持的格式可以直接上传；此处统一用 wav 作为 VoiceFormat 提示
         voice_ext = "wav" if filename.endswith(".wav") else "mp3"
