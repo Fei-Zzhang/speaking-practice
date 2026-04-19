@@ -740,10 +740,13 @@
     // 题库见 listen-repeat-bank.js（与教师端 Listen & Repeat 布置共用）
     const groups = window.LISTEN_REPEAT_GROUPS;
 
-    /** 智聆 oral-eval（与 standalone 中 API_PYTHON 一致） */
+    /** 智聆 oral-eval；本机开发默认 5001（与 standalone 中 API_PYTHON 一致，修改时请同步 standalone.html） */
     var ORAL_API_BASE = 'http://localhost:5001';
     /** Node 布置 / 提交作业（与 standalone 中 API_NODE 一致） */
     var API_NODE_ASSIGN = 'http://localhost:3003';
+    /** 部署在 GitHub Pages 等线上环境时的默认后端（与 standalone.html 内常量保持一致） */
+    var LNR_DEFAULT_API_PYTHON = 'https://speaking-practice-2-mmuf.onrender.com';
+    var LNR_DEFAULT_API_NODE = 'https://speaking-practice-1-4mkz.onrender.com';
     var ASSIGNMENT_MODE = false;
     var ASSIGNMENT_ID = null;
     /** 作业虚拟组：id 用于统计 key，不与真实组 id 混用 */
@@ -763,6 +766,21 @@
           ASSIGNMENT_MODE = true;
           ASSIGNMENT_ID = q.get('assignmentId');
         }
+      } catch (e) {}
+    })();
+
+    /** 从主站外直接打开、或旧收藏无 apiPython 时，避免仍请求 localhost；本机 / file:// 保持默认 */
+    (function applyHostedApiDefaults() {
+      try {
+        var h = (window.location.hostname || '').toLowerCase();
+        var proto = window.location.protocol || '';
+        var isLocalPage =
+          h === 'localhost' ||
+          h === '127.0.0.1' ||
+          (h === '' && proto === 'file:');
+        if (isLocalPage) return;
+        if (ORAL_API_BASE === 'http://localhost:5001') ORAL_API_BASE = LNR_DEFAULT_API_PYTHON;
+        if (API_NODE_ASSIGN === 'http://localhost:3003') API_NODE_ASSIGN = LNR_DEFAULT_API_NODE;
       } catch (e) {}
     })();
 
