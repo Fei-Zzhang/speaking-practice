@@ -29,12 +29,14 @@ jobs:
       - name: 仅打包静态站点文件（避免整仓体积超限）
         run: |
           mkdir -p _site
-          cp standalone.html index.html student.html teacher.html _site/
+          cp standalone.html index.html student.html teacher.html fei-studio-brand.png _site/
           cp .nojekyll _site/ 2>/dev/null || touch _site/.nojekyll
           cp grammartestmaterial.text topicdevelopmenttestmaterial.text wordingtestmaterial.text practice-bank.cache.json _site/
           cp -r "Listen&Repeat练习" _site/
           ls -la _site
           wc -c _site/standalone.html
+          echo "---- _site 文件数（应远小于整仓，仅用于核对未误传全库）----"
+          find _site -type f | wc -l
 
       - uses: actions/configure-pages@v5
       # v4 默认不包含以 . 开头的文件，需显式包含 .nojekyll
