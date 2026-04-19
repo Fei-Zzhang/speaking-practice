@@ -130,6 +130,15 @@
       const API_PYTHON = 'https://speaking-practice-2-mmuf.onrender.com';
       const API_BASE = API_PYTHON;
 
+      /** 与当前 HTML 同目录的资源；用 new URL 解析，避免 GitHub Pages 子路径下写死 `src="a.png"` 导致 404 */
+      function assetUrl(rel) {
+        try {
+          return new URL(rel, window.location.href).href;
+        } catch (e) {
+          return rel;
+        }
+      }
+
       /** Interview 题库：优先加载与页面同目录的 practice-bank.cache.json（秒开），否则请求 Python */
       function resolvePracticeBankStaticUrl() {
         try {
@@ -2078,8 +2087,12 @@
             root.innerHTML =
               studentTopNavHtml() +
               '<div class="card">' +
-              '<div class="student-home-brand"><img class="student-home-logo" src="fei-studio-brand.png" alt="fei\'s studio" /></div>' +
-              '<div class="student-home-cover"><img class="student-home-cover-img" src="fei-studio-brand.png" alt="" /></div>' +
+              '<div class="student-home-brand"><img class="student-home-logo" src="' +
+              assetUrl('fei-studio-brand.png') +
+              '" alt="fei\'s studio" /></div>' +
+              '<div class="student-home-cover"><img class="student-home-cover-img" src="' +
+              assetUrl('fei-studio-brand.png') +
+              '" alt="" /></div>' +
               '</div>';
             bindStudentTopNav(root);
             return;
@@ -2345,8 +2358,12 @@
           root.innerHTML =
             stNav +
             '<div class="card">' +
-            '<div class="student-home-brand"><img class="student-home-logo" src="fei-studio-brand.png" alt="fei\'s studio" /></div>' +
-            '<div class="student-home-cover"><img class="student-home-cover-img" src="fei-studio-brand.png" alt="" /></div>' +
+            '<div class="student-home-brand"><img class="student-home-logo" src="' +
+            assetUrl('fei-studio-brand.png') +
+            '" alt="fei\'s studio" /></div>' +
+            '<div class="student-home-cover"><img class="student-home-cover-img" src="' +
+            assetUrl('fei-studio-brand.png') +
+            '" alt="" /></div>' +
             '</div>';
           bindStudentTopNav(root);
           return;
