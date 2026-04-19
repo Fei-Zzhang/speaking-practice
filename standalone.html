@@ -26,7 +26,7 @@
     .header h1 { margin: 0; font-size: 1.35rem; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
     .card h2 { margin: 0 0 0.5rem; font-size: 1.15rem; }
-    .card p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+    .card p { margin: 0; color: var(--text); font-size: 0.95rem; }
     button { font-family: inherit; cursor: pointer; border: none; border-radius: 10px; padding: 0.6rem 1.2rem; font-size: 0.95rem; background: var(--border); color: var(--text); }
     button:hover { background: #d0d0d5; }
     button.primary { background: var(--accent); color: #fff; }
@@ -72,6 +72,31 @@
     .student-top-nav button:hover { border-color: var(--accent); }
     .student-top-nav button.nav-active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .student-top-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+    .help-tip-wrap { position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
+    .help-tip-btn {
+      width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg);
+      color: var(--muted); font-size: 12px; font-weight: 700; cursor: help; padding: 0; line-height: 1;
+      flex-shrink: 0;
+    }
+    .help-tip-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .help-tip-panel {
+      display: none; position: absolute; right: 0; top: calc(100% + 8px);
+      width: min(380px, 94vw); max-height: min(72vh, 440px); overflow-y: auto;
+      padding: 0.85rem 1rem; background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,0.12);
+      font-size: 0.82rem; line-height: 1.55; color: var(--text); text-align: left; z-index: 300;
+    }
+    .help-tip-wrap:hover .help-tip-panel,
+    .help-tip-wrap:focus-within .help-tip-panel { display: block; }
+    .help-tip-section { font-weight: 600; margin: 0.65rem 0 0.35rem; font-size: 0.84rem; }
+    .help-tip-section:first-child { margin-top: 0; }
+    .help-tip-ol { margin: 0; padding-left: 1.15rem; }
+    .help-tip-ol li { margin-bottom: 0.35rem; }
+    .login-card .help-tip-login-corner { position: absolute; top: 1rem; right: 1rem; }
+    .student-home-brand { margin-bottom: 0.75rem; }
+    .student-home-logo { height: 44px; width: auto; object-fit: contain; display: block; }
+    .student-home-cover { border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: #f5f5f5; }
+    .student-home-cover-img { width: 100%; max-height: 280px; object-fit: contain; display: block; background: #f5f5f7; }
     .header-user-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.95rem; line-height: 1; cursor: default; }
     .btn-logout-pill { padding: 0.4rem 0.75rem; font-size: 0.88rem; border-radius: 8px; }
     .material-game-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; font-size: 0.95rem; }
@@ -81,8 +106,6 @@
     .material-game-opt.picked { border-color: var(--accent); background: rgba(99,102,241,0.12); }
     .material-game-opt.correct { border-color: var(--correct); background: rgba(34,197,94,0.12); }
     .material-game-opt.wrong { border-color: var(--wrong); background: rgba(239,68,68,0.08); }
-    .student-home-placeholder { min-height: 80px; border: 2px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
-    .student-cover-placeholder { min-height: 160px; border: 2px dashed var(--border); border-radius: 14px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
     .material-text-body { white-space: pre-wrap; font-size: 0.88rem; line-height: 1.55; max-height: min(65vh, 520px); overflow-y: auto; padding: 1rem; background: var(--bg); border-radius: 10px; border: 1px solid var(--border); text-align: left; }
     .material-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
     .material-tabs button { padding: 0.45rem 0.75rem; font-size: 0.88rem; }
@@ -247,6 +270,94 @@
         return state.studentNav || 'home';
       }
 
+      var HELP_HTML_LOGIN =
+        '<div class="help-tip-section">登录</div>' +
+        '<ol class="help-tip-ol">' +
+        '<li>1️⃣ 注册账号：输入你的名字拼音，设置并牢记密码。</li>' +
+        '<li>2️⃣ 使用拼音账号与密码登录。</li>' +
+        '<li>3️⃣ 登陆不上时联系老师。</li>' +
+        '</ol>';
+
+      var HELP_HTML_TEACHER =
+        '<div class="help-tip-section">教师登录</div>' +
+        '<ol class="help-tip-ol">' +
+        '<li>1️⃣ 首次注册需填写管理员下发的注册口令。</li>' +
+        '<li>2️⃣ 使用教师用户名与密码登录。</li>' +
+        '<li>3️⃣ 无法登录时联系管理员。</li>' +
+        '</ol>';
+
+      var HELP_HTML_BANK =
+        '<div class="help-tip-section">Listen &amp; Repeat</div>' +
+        '<ol class="help-tip-ol">' +
+        '<li>1️⃣ 进入练习；</li>' +
+        '<li>2️⃣ 点击语音条，播放一句后，暂停；</li>' +
+        '<li>3️⃣ 点击开始录音，开始复述；</li>' +
+        '<li>4️⃣ 点击停止录音；</li>' +
+        '<li>5️⃣ 等待弹出正确答案；</li>' +
+        '<li>6️⃣ 可以重复播放和重复录音；</li>' +
+        '<li>7️⃣ 评分达到85+之后点击下一句；</li>' +
+        '<li>8️⃣ 最后完成输出自己的姓名，点击保存；</li>' +
+        '<li>9️⃣ 最后总结页面的答题次数和备注展示出来，截图发送至老师微信；</li>' +
+        '</ol>' +
+        '<div class="help-tip-section">Interview</div>' +
+        '<ol class="help-tip-ol">' +
+        '<li>1️⃣ 选择话题类型；</li>' +
+        '<li>2️⃣ 读题；</li>' +
+        '<li>3️⃣ 开始录音；</li>' +
+        '<li>4️⃣ 结束录音；</li>' +
+        '<li>5️⃣ 等待老师反馈评分；</li>' +
+        '</ol>';
+
+      var HELP_HTML_PRACTICE =
+        '<div class="help-tip-section">练习</div>' +
+        '<ol class="help-tip-ol">' +
+        '<li>1️⃣ 顶部切换标签，打开对应纸质材料；</li>' +
+        '<li>2️⃣ 在「大闯关」中逐题作答；</li>' +
+        '<li>3️⃣ 答错可重试，通关后查看得分；</li>' +
+        '<li>4️⃣ 正文区域可上下滚动阅读；</li>' +
+        '<li>5️⃣ 需要留存时可自行截图或打印页面。</li>' +
+        '</ol>';
+
+      function getStudentHelpKind() {
+        if (PORTAL !== 'student') return '';
+        var u = getCurrentUser();
+        if (state.studentNav === 'login') return 'login';
+        if (!u) {
+          if (state.studentNav === 'bank') return 'bank';
+          if (state.studentNav === 'practice') return 'practice';
+          return '';
+        }
+        var nav = getStudentNavActive();
+        if (nav === 'bank') return 'bank';
+        if (nav === 'practice') return 'practice';
+        return '';
+      }
+
+      function studentHelpIconHtml() {
+        var kind = getStudentHelpKind();
+        if (!kind) return '';
+        var inner =
+          kind === 'login' ? HELP_HTML_LOGIN : kind === 'bank' ? HELP_HTML_BANK : kind === 'practice' ? HELP_HTML_PRACTICE : '';
+        if (!inner) return '';
+        return (
+          '<span class="help-tip-wrap">' +
+          '<button type="button" class="help-tip-btn" aria-label="帮助">?</button>' +
+          '<div class="help-tip-panel">' +
+          inner +
+          '</div></span>'
+        );
+      }
+
+      function teacherLoginHelpHtml() {
+        return (
+          '<span class="help-tip-wrap help-tip-login-corner">' +
+          '<button type="button" class="help-tip-btn" aria-label="帮助">?</button>' +
+          '<div class="help-tip-panel">' +
+          HELP_HTML_TEACHER +
+          '</div></span>'
+        );
+      }
+
       /** 学生顶栏：首页 | 账号(已登录) | 题库 | 练习；未登录时「登录」在右上 */
       function studentTopNavHtml() {
         if (PORTAL !== 'student') return '';
@@ -257,6 +368,7 @@
         }
         var u = getCurrentUser();
         var navBtns = btn('home', '首页') + btn('bank', '题库') + btn('practice', '练习');
+        var help = studentHelpIconHtml();
         var right;
         if (u) {
           var initial = String(u).trim().charAt(0) || '?';
@@ -278,6 +390,7 @@
           navBtns +
           '</nav>' +
           '<div class="student-top-actions">' +
+          help +
           right +
           '</div>' +
           '</div>'
@@ -1336,17 +1449,11 @@
       }
       function studentTranscriptHtml(ev) {
         var plain = asrPlainNoPunctDisplay(ev);
-        return (
-          '<p style="color:var(--muted);font-size:0.85rem;margin-top:0.75rem">学生口述（ASR，无标点）</p>' +
-          '<div class="transcript-box" style="margin-top:0.35rem">' + escapeHtml(plain || '（无）') + '</div>'
-        );
+        return '<div class="transcript-box" style="margin-top:0.35rem">' + escapeHtml(plain || '（无）') + '</div>';
       }
       function modelAnswerHtml(ev) {
         var model = modelAnswerDisplay(ev);
-        return (
-          '<p style="color:var(--muted);font-size:0.85rem;margin-top:0.75rem">修改后</p>' +
-          '<div class="transcript-box" style="margin-top:0.35rem">' + escapeHtml(model || '（暂无修改后）') + '</div>'
-        );
+        return '<div class="transcript-box" style="margin-top:0.35rem">' + escapeHtml(model || '（暂无修改后）') + '</div>';
       }
 
       function evalDataLooksComplete(ev) {
@@ -1643,8 +1750,7 @@
           }
           root.innerHTML =
             navMat +
-            '<div class="card"><h2 style="margin:0 0 0.5rem">练习 · 大闯关</h2><p style="color:var(--muted);font-size:0.9rem;margin:0">单选题闯关，每次一题；措辞关无选择题时将使用语法材料中的选择题。</p></div>' +
-            '<div class="card">' +
+            '<div class="card"><h2 style="margin:0 0 0.75rem">练习 · 大闯关</h2>' +
             tabsHtmlMat +
             bodyMat +
             '</div>';
@@ -1710,16 +1816,13 @@
           root.innerHTML =
             studentTopNavHtml() +
             '<div class="header"><h1>题库</h1><div class="header-right"><button type="button" data-action="backBankHubHome">返回首页</button></div></div>' +
-            '<p style="color:var(--muted);margin-bottom:1rem">请选择练习体系：Listen &amp; Repeat 为原跟读页面；Interview 为口语题库。</p>' +
             '<div class="main-choice">' +
             '<div class="card" data-action="stuPickLnr">' +
             '<h2>Listen &amp; Repeat</h2>' +
-            '<p>跟读与智聆评测。进入原有 LNR 页面，浏览<strong>全套</strong>组句与练习。</p>' +
             '<button type="button" class="primary" style="margin-top:0.5rem">进入 LNR</button>' +
             '</div>' +
             '<div class="card" data-action="stuPickInterview">' +
             '<h2>Interview</h2>' +
-            '<p>口语 Interview 题库：按话题或设问方式分类，<strong>全套</strong>题目与录音评测。</p>' +
             '<button type="button" class="primary" style="margin-top:0.5rem">进入 Interview</button>' +
             '</div>' +
             '</div>';
@@ -1758,11 +1861,9 @@
         if (!currentUser && PORTAL === 'teacher') {
           var portalLabel = PORTAL === 'teacher' ? '教师端' : '学生端';
           var teacherCodeRow = PORTAL === 'teacher'
-            ? '<label for="loginTeacherCode">教师注册口令（首次注册教师账号必填，在 server/.env 配置 TEACHER_REGISTER_SECRET）</label><input type="password" id="loginTeacherCode" placeholder="口令" autocomplete="off">'
+            ? '<label for="loginTeacherCode">注册口令</label><input type="password" id="loginTeacherCode" placeholder="口令" autocomplete="off">'
             : '';
-          var studentLoginNote = PORTAL === 'student'
-            ? '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">首次使用请先<strong>注册</strong>（用户名即身份，教师布置作业时「学生姓名」须与此一致）。</p>'
-            : '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">入口：<code>?portal=student</code> 或 <code>?portal=teacher</code>；学生与教师账号不可混用入口。</p>';
+          var studentLoginNote = '';
           var nameField = PORTAL === 'student'
             ? '<label for="loginName">用户名</label><input type="text" id="loginName" placeholder="注册时使用的用户名" autocomplete="username">'
             : '<label for="loginName">学号 / 用户名</label><input type="text" id="loginName" placeholder="请输入学号或用户名" autocomplete="username">';
@@ -1773,7 +1874,8 @@
               : '';
           root.innerHTML = `
             <div class="header"><h1>口语练习 · ${portalLabel}</h1></div>
-            <div class="card login-card">
+            <div class="card login-card" style="position:relative;padding-top:2.5rem">
+              ${PORTAL === 'teacher' ? teacherLoginHelpHtml() : ''}
               <h2>登录</h2>
               ${studentLoginNote}
               ${nameField}
@@ -1784,9 +1886,6 @@
               <button type="button" class="primary btn-login" id="btnLogin">登录</button>
               <button type="button" class="btn-login" id="btnOffline">离线登录（不连接后端）</button>
               ${studentRegisterBlock}
-              ${PORTAL === 'teacher'
-                ? '<p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">登录与任务走 Node 后端（${escapeHtml(API_NODE)}），评测走 Python（${escapeHtml(API_PYTHON)}）。</p>'
-                : '<p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">账号数据存于 Node（' + escapeHtml(API_NODE) + '）；部署后请在 Supabase 执行 <code>supabase-portal-student-v1.sql</code>。</p>'}
             </div>
           `;
           var btnReg = document.getElementById('btnRegisterStudent');
@@ -1979,9 +2078,8 @@
             root.innerHTML =
               studentTopNavHtml() +
               '<div class="card">' +
-              '<div class="student-home-placeholder">Logo（预留）</div>' +
-              '<div class="student-cover-placeholder">封面图（预留）</div>' +
-              '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">使用顶部导航：「登陆」后可用题库与作业；「练习」可浏览纸质材料（无需登录）。</p>' +
+              '<div class="student-home-brand"><img class="student-home-logo" src="fei-studio-brand.png" alt="fei\'s studio" /></div>' +
+              '<div class="student-home-cover"><img class="student-home-cover-img" src="fei-studio-brand.png" alt="" /></div>' +
               '</div>';
             bindStudentTopNav(root);
             return;
@@ -1989,28 +2087,22 @@
           if (state.studentNav === 'bank') {
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card"><h2 style="margin:0 0 0.5rem">题库</h2><p style="color:var(--muted);margin:0">Interview 口语题库需<strong>登录</strong>后使用。请点击顶部「登陆」。</p></div>';
+              '<div class="card"><h2 style="margin:0">题库</h2></div>';
             bindStudentTopNav(root);
             return;
           }
           if (state.studentNav === 'login') {
-            var stNote =
-              '<p style="color:var(--muted);font-size:0.85rem;margin:-0.5rem 0 1rem">首次使用请先<strong>注册</strong>（用户名即身份，教师布置作业时「学生姓名」须与此一致）。</p>';
             var stReg =
               '<div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)"><h3 style="font-size:1rem;margin:0 0 0.5rem">注册新账号</h3><label for="regName">用户名</label><input type="text" id="regName" class="fill-input" style="margin-top:0.35rem" placeholder="2～48 字，中文/字母/数字/._-" autocomplete="off"><label for="regPwd" style="margin-top:0.75rem;display:block">密码</label><input type="password" id="regPwd" placeholder="至少 4 位" autocomplete="new-password"><button type="button" class="primary" style="margin-top:0.75rem" id="btnRegisterStudent">注册</button></div>';
             root.innerHTML =
               studentTopNavHtml() +
               '<div class="card login-card">' +
               '<h2>登录</h2>' +
-              stNote +
               '<label for="loginName">用户名</label><input type="text" id="loginName" placeholder="注册时使用的用户名" autocomplete="username">' +
               '<label for="loginPwd">密码</label><input type="password" id="loginPwd" placeholder="密码" autocomplete="current-password">' +
               '<button type="button" class="primary btn-login" id="btnLogin">登录</button>' +
               '<button type="button" class="btn-login" id="btnOffline">离线登录（不连接后端）</button>' +
               stReg +
-              '<p style="color:var(--muted);font-size:0.8rem;margin-top:1rem">账号数据存于 Node（' +
-              escapeHtml(API_NODE) +
-              '）；部署后请在 Supabase 执行 <code>supabase-portal-student-v1.sql</code>。</p>' +
               '</div>';
             bindStudentTopNav(root);
             var btnReg2 = document.getElementById('btnRegisterStudent');
@@ -2140,16 +2232,13 @@
           var portalLabel = '教师端';
           root.innerHTML = `
             <div class="header"><h1>口语练习 · ${portalLabel}</h1><div class="header-right">${headerRight()}</div></div>
-            <p style="color:var(--muted);margin-bottom:1rem">请选择模块：<strong>Interview</strong> 为本站口语任务与题库；<strong>Listen &amp; Repeat</strong> 为跟读与智聆语音评测。</p>
             <div class="main-choice">
               <div class="card" data-action="hubPick" data-hub="interview">
                 <h2>Interview</h2>
-                <p>进入本站：教师布置 / 学生任务、题库练习、口语流程等（原 standalone 主功能）。</p>
                 <button type="button" class="primary" style="margin-top:0.5rem">进入 Interview</button>
               </div>
               <div class="card" data-action="hubPick" data-hub="listenrepeat">
                 <h2>Listen &amp; Repeat</h2>
-                <p>听音跟读、句子练习；语音评测连接 Python 智聆服务（需本机 <code>oral-python-backend</code> 运行）。</p>
                 <button type="button" class="primary" style="margin-top:0.5rem">进入 Listen &amp; Repeat</button>
               </div>
             </div>
@@ -2182,31 +2271,25 @@
         if (state.view === 'list' && state.mainChoice === null && PORTAL === 'teacher') {
           root.innerHTML = `
             <div class="header" style="flex-wrap:wrap;gap:0.5rem"><div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.5rem">${headerHubBtn()}<h1 style="margin:0">教师端 · 口语任务</h1></div><div class="header-right">${headerRight()}</div></div>
-                <p style="color:var(--muted);margin-bottom:1rem">从题库按话题/设问选题（支持每套 4 题），为任务<strong>命名</strong>并填写<strong>学生姓名</strong>后下发。</p>
             <div class="main-choice">
               <div class="card" data-action="main" data-choice="teacherAssign">
                 <h2>Interview · 选题并布置</h2>
-                <p>加载 Python 题库（较慢）→ 选小类 → 按套勾选 → 填写任务名称与学生姓名。</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
               <div class="card" data-action="main" data-choice="teacherAssignLR">
                 <h2>Listen &amp; Repeat · 按全局组号</h2>
-                <p>按<strong>全局组号</strong>一次布置多组整套句子（如 1-18、A1-18），无需加载 Interview 题库。</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
               <div class="card" data-action="main" data-choice="teacherList">
                 <h2>已布置任务</h2>
-                <p>查看已创建任务列表（题目数量、创建时间）。</p>
                 <button class="primary" style="margin-top:0.5rem">查看</button>
               </div>
               <div class="card" data-action="main" data-choice="teacherInterviewApproval">
                 <h2>Interview · 云端批改开通</h2>
-                <p>按学生<strong>注册用户名</strong>开通或关闭 Interview 云端 ASR+批改（作业与自主练习）。Listen &amp; Repeat 无需开通。</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
               <div class="card" data-action="main" data-choice="teacherTodaySubmissions">
                 <h2>今日作业提交</h2>
-                <p>自动列出<strong>今天内</strong>学生已保存的 Interview 作业提交（转写/批改文本来自数据库，无需输入姓名）。</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
             </div>
@@ -2262,9 +2345,8 @@
           root.innerHTML =
             stNav +
             '<div class="card">' +
-            '<div class="student-home-placeholder">Logo（预留）</div>' +
-            '<div class="student-cover-placeholder">封面图（预留）</div>' +
-            '<p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">登录名即学生身份；作业保存后，教师可在「今日作业提交」查看当天记录（需在线登录与后端）。</p>' +
+            '<div class="student-home-brand"><img class="student-home-logo" src="fei-studio-brand.png" alt="fei\'s studio" /></div>' +
+            '<div class="student-home-cover"><img class="student-home-cover-img" src="fei-studio-brand.png" alt="" /></div>' +
             '</div>';
           bindStudentTopNav(root);
           return;
@@ -2277,7 +2359,6 @@
           root.innerHTML = `
             <div class="header"><h1>今日作业提交</h1><div class="header-right"><button data-action="backTT">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);margin-bottom:0.75rem">列出<strong>北京时间当天</strong>内，您布置的任务中学生已<strong>保存提交</strong>的记录（含转写/批改文本）。数据来自数据库 <code>student_submissions</code>，学生每次提交作业即写入。本页约每 8 秒自动刷新，也可手动点「刷新」。</p>
               <p style="margin-bottom:0.75rem">
                 <button type="button" class="primary" id="ttRefresh">刷新</button>
               </p>
@@ -2533,7 +2614,6 @@
 
             root.innerHTML = root.innerHTML + `
               <div class="card">
-                <p style="color:var(--muted);font-size:0.9rem">自动每 5 秒刷新一次；你也可以返回列表查看完成进度。</p>
               </div>
               ${studentCardsHtml}
             `;
@@ -2669,7 +2749,6 @@
           root.innerHTML = `
             <div class="header"><h1>Interview 云端批改</h1><div class="header-right"><button data-action="backIap">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem">开通后，该学生可使用 Interview <strong>作业云端批改</strong> 与 <strong>题库自主练习的云端评测</strong>。Listen &amp; Repeat 始终无需开通。</p>
               <label for="iapStudent">学生用户名（须与学生注册名一致）</label>
               <input type="text" id="iapStudent" class="fill-input" style="max-width:100%;margin-top:0.35rem" placeholder="例如：张三">
               <div style="margin-top:0.75rem">
@@ -2734,7 +2813,6 @@
           root.innerHTML = `
             <div class="header"><h1>转写记录</h1><div class="header-right"><button data-action="backTL">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);font-size:0.9rem">浏览器内语音转写（及你在题库练习页保存的文本）保存在本机，可一键复制到其他 AI。</p>
               <button type="button" id="btnClearTranscriptLog" style="margin-top:0.5rem">清空记录</button>
             </div>
             ${
@@ -2928,16 +3006,7 @@
           root.innerHTML = `
             <div class="header"><h1>Listen &amp; Repeat · 全局组号布置</h1><div class="header-right"><button data-action="backLR0">返回</button> ${headerRight()}</div></div>
             <div class="card">
-              <p style="color:var(--muted);font-size:0.9rem;margin-top:0">题库中组顺序与练习页一致，共 <strong>${LR_BANK.length}</strong> 组。布置范围为<strong>整组全部句子</strong>。题库含<strong>字母 id</strong>（如 A1）与<strong>纯数字 id</strong>（如 5、12）两套组，规则如下。</p>
-              <ul style="color:var(--muted);font-size:0.85rem;margin:0.5rem 0 0 1.1rem;line-height:1.5">
-                <li><code>全部</code>、<code>*</code> 或 <code>all</code>：<strong>所有组</strong>（一键全选）</li>
-                <li><code>序1-${LR_BANK.length}</code> 或 <code>pos:1-18</code>：按<strong>列表顺序</strong>第几组到第几组（用于连续字母段）</li>
-                <li><code>1-18</code>：优先选<strong>组 id 为纯数字</strong>且在 1～18 的组；若无匹配再按列表顺序解析</li>
-                <li><code>A1-18</code>：从 <strong>A1</strong> 起连续 18 组</li>
-                <li><code>A1-F18</code>：从组 <strong>A1</strong> 到组 <strong>F18</strong>（按题库顺序，含两端）</li>
-                <li>单组：纯数字优先匹配<strong>组 id</strong>（如 <code>5</code> 对应 id「5」）；否则为列表第 n 组；字母组写 <code>E16</code></li>
-              </ul>
-              <label style="display:block;margin-top:0.75rem">组号范围</label>
+              <label style="display:block;margin-top:0">组号范围</label>
               <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-top:0.35rem">
                 <input type="text" id="lrTeacherNums" class="fill-input" style="max-width:100%;flex:1;min-width:200px" placeholder="例如：全部、序1-18、1-18、A1-18" value="${escapeHtml(state.teacherLRNums)}">
                 <button type="button" class="primary" id="btnLrTeacherPreview" style="padding:0.55rem 1rem">刷新预览</button>
@@ -2948,7 +3017,6 @@
             </div>
             <div class="card">
               <label style="display:block;font-weight:600;margin-bottom:0.35rem">学生姓名</label>
-              <p style="color:var(--muted);font-size:0.85rem;margin:0 0 0.5rem">每行一位，或逗号、分号分隔；须与学生端填写的姓名一致。</p>
               <textarea id="lrTeacherStudents" style="width:100%;min-height:100px;padding:0.6rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;margin-bottom:1rem" placeholder="张三&#10;李四">${escapeHtml(state.teacherAssignStudents)}</textarea>
               <label style="display:block;font-weight:600;margin-bottom:0.35rem">作业名称 <span style="color:var(--wrong)">*</span></label>
               <input type="text" id="lrTeacherTitle" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border)" placeholder="例如：第二周跟读作业" value="${escapeHtml(state.teacherAssignTitle)}">
@@ -3113,10 +3181,8 @@
                   <button class="primary" ${modeTA === 'type' ? '' : 'style="opacity:0.85"'} data-action="taMode" data-mode="type">按设问方式</button>
                 </div>
               </div>
-              <p style="color:var(--muted);margin-bottom:1rem">选择小类后，将按每套 ${QUESTIONS_PER_SET} 题展示，可勾选具体题目。</p>
               ${categoriesTA.map(function (c) {
-                var n = (c.questions && c.questions.length) ? c.questions.length : 0;
-                return '<div class="card" style="cursor:pointer;margin-bottom:0.75rem" data-ta-cat="' + escapeHtml(c.id || '') + '"><h2>' + escapeHtml(c.title || '') + '</h2><p style="color:var(--muted)">共 ' + n + ' 题 · 每套 ' + QUESTIONS_PER_SET + ' 题 = ' + Math.ceil(n / QUESTIONS_PER_SET) + ' 套</p></div>';
+                return '<div class="card" style="cursor:pointer;margin-bottom:0.75rem" data-ta-cat="' + escapeHtml(c.id || '') + '"><h2>' + escapeHtml(c.title || '') + '</h2></div>';
               }).join('')}
             `;
             root.querySelector('[data-action=backTA0]').onclick = function () {
@@ -3160,7 +3226,6 @@
               <div class="card">
                 <p style="color:var(--muted)">已选 <strong>${selN}</strong> 道题</p>
                 <label style="display:block;margin-bottom:0.35rem;font-weight:600">学生姓名</label>
-                <p style="color:var(--muted);font-size:0.85rem;margin:0 0 0.5rem">每行一位学生，或用逗号、分号分隔；须与学生端填写的姓名一致。</p>
                 <textarea id="taStudents" style="width:100%;min-height:100px;padding:0.6rem;border-radius:8px;border:1px solid var(--border);font-family:inherit;margin-bottom:1rem" placeholder="张三&#10;李四"></textarea>
                 <label style="display:block;margin-bottom:0.35rem;font-weight:600">作业名称 <span style="color:var(--wrong)">*</span></label>
                 <input type="text" id="taTitle" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border)" placeholder="例如：第一周口语作业">
@@ -3464,11 +3529,9 @@
               <div class="header"><h1>${escapeHtml(asg.title || '任务')}</h1><div class="header-right"><button data-action="backST0">返回</button> ${headerRight()}</div></div>
               <div class="card">
                 <h2>全部题目已录音</h2>
-                <p style="color:var(--muted);font-size:0.95rem">录音已上传。后台正在批改，你可继续做题其他作业或稍等。</p>
                 ${wrapDur}
-                <p style="margin-top:0.75rem">批改队列进行中：<strong>${pend}</strong> 道</p>
+                <p style="margin-top:0.75rem">批改队列：<strong>${pend}</strong></p>
                 <button class="primary" style="margin-top:1rem" data-action="enterReview">进入复习</button>
-                <p style="color:var(--muted);font-size:0.85rem;margin-top:0.75rem">进入复习后按题查看 ASR、修改后范文与详细反馈；若某题仍显示「生成中」，可点刷新或稍后重试。</p>
               </div>
             `;
             root.querySelector('[data-action=backST0]').onclick = function () {
@@ -3590,7 +3653,7 @@
           var readBlock = '';
           if (!completed) {
             if (state.studentPhase === 'reading') {
-              readBlock = '<div class="countdown-box" style="margin-bottom:1rem"><span class="num" id="studentReadNum">' + state.studentReadSecondsLeft + '</span><span style="color:var(--muted)"> 秒读题</span><p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">读题结束后方可录音</p></div>';
+              readBlock = '<div class="countdown-box" style="margin-bottom:1rem"><span class="num" id="studentReadNum">' + state.studentReadSecondsLeft + '</span><span style="color:var(--muted)"> 秒读题</span></div>';
             } else if (state.studentPhase === 'ready') {
               readBlock = '<div class="card" style="border-color:var(--correct);margin-bottom:1rem"><strong>读题时间已结束，请点击下方开始录音（' + SPEAKING_DURATION + ' 秒）</strong></div>';
             }
@@ -3608,12 +3671,11 @@
           var liveTransHtml = '';
           if (!completed && isInterviewQ && PORTAL !== 'student') {
             liveTransHtml =
-              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3><p style="color:var(--muted);font-size:0.85rem">在线登录时同步教师端「Interview · 实时转写」。' +
-              '</p>' +
+              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3>' +
               '<div id="realWebSpeechBox" class="transcript-box">' +
               (escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示）') +
               '</div></div>' +
-              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3><p style="color:var(--muted);font-size:0.85rem">需 server 配置 TENCENT_ASR_*。</p>' +
+              '<div class="card"><h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>' +
               '<div id="realTencentBox" class="transcript-box">' +
               (escapeHtml(state.realTencentLive || '') || '（录音中显示）') +
               '</div></div>';
@@ -3642,18 +3704,17 @@
                 modelAnswerHtml(ev) +
                 '</div>';
             } else {
-              resHtml = '<div class="card"><h2>已提交</h2><p style="color:var(--muted);font-size:0.85rem">提交时间：' + escapeHtml(submitTime) + '</p><p style="color:var(--muted);font-size:0.95rem">等待教师批改完成后，你会在这里看到反馈。</p></div>';
+              resHtml = '<div class="card"><h2>已提交</h2><p style="color:var(--muted);font-size:0.85rem">提交时间：' + escapeHtml(submitTime) + '</p></div>';
             }
           }
 
           var batchBanner =
             useBatchFlow && hasPendingStudentTaskQueue()
               ? '<div class="card" style="border-color:var(--accent);margin-bottom:0.75rem;font-size:0.9rem">' +
-                (state.studentSubmitBusy ? '当前题录音正在上传；' : '') +
+                (state.studentSubmitBusy ? '上传中… ' : '') +
                 ((state.studentPendingGrading || 0) > 0
-                  ? '后台正在批改 <strong>' + (state.studentPendingGrading || 0) + '</strong> 道题；'
-                  : '') +
-                '如需退出页面，请先等待队列完成，避免进度延迟显示。</div>'
+                  ? '批改队列：' + (state.studentPendingGrading || 0)
+                  : '')
               : '';
           var navRow =
             useBatchFlow
@@ -4057,7 +4118,7 @@
               <div class="header"><h1>题目练习</h1><div class="header-right"><button data-action="backMain">返回</button> ${headerRight()}</div></div>
               <div class="card">
                 <h2>正在加载题库…</h2>
-                <p style="color:var(--muted);margin-top:0.5rem">${state.practiceBankError ? escapeHtml(state.practiceBankError) : '若存在 practice-bank.cache.json 则秒开；否则请求 Python 解析 docx（首次可能稍慢）。'}</p>
+                <p style="color:var(--muted);margin-top:0.5rem">${state.practiceBankError ? escapeHtml(state.practiceBankError) : '正在加载…'}</p>
                 ${state.practiceBankError ? '<button class="primary" style="margin-top:0.75rem" data-action="retryPracticeBank">重试加载</button>' : ''}
               </div>
             `;
@@ -4111,12 +4172,10 @@
                   </button>
                 </div>
               </div>
-              <p style="color:var(--muted);margin-bottom:1rem">请选择一个小类：</p>
               ${(categories || []).map(function (c) {
                 var qsLen = (c.questions && c.questions.length) ? c.questions.length : 0;
                 return '<div class="card" data-action="pickCategory" data-cat="' + escapeHtml(c.id || '') + '" style="cursor:pointer;margin-bottom:0.75rem">' +
-                  '<h2>' + escapeHtml(c.title || '') + '</h2>' +
-                  '<p style="color:var(--muted);margin-top:0.5rem">共 ' + qsLen + ' 题</p>' +
+                  '<h2>' + escapeHtml(c.title || '') + ' <span style="font-size:0.85rem;font-weight:500;color:var(--muted)">(' + qsLen + ')</span></h2>' +
                   '</div>';
               }).join('')}
             `;
@@ -4227,18 +4286,6 @@
               '</div>'
             : '';
 
-          var stuCloudHint =
-            PORTAL === 'student'
-              ? getInterviewGradingApproved()
-                ? '<p style="color:var(--correct);font-size:0.9rem;margin-top:0.5rem">你已开通 Interview 云端评测：停止录音后将经服务器做 ASR+批改；转写将同步教师端。</p>'
-                : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">未开通云端批改时，停止录音后将尝试云端评测；录音结束后转写会同步教师端（不展示转写界面）。</p>'
-              : '';
-          var stuPrompt =
-            PORTAL === 'student'
-              ? '用英文作答约 45 秒。点击「开始录音」后说话；停止后将' +
-                (getInterviewGradingApproved() ? '提交云端评测。' : '尝试云端评测（未开通则见提示）。')
-              : '请根据下面的提示，用英文作答（45 秒左右），点击「开始录音」后开始说，结束后系统会把音频上传到后端做 ASR + 口语评测。';
-
           var transcriptBlockReal;
           if (PORTAL === 'student') {
             transcriptBlockReal = '';
@@ -4246,17 +4293,15 @@
             transcriptBlockReal =
               '<div class="card">' +
               '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">实时语音转写（浏览器）</h3>' +
-              '<p style="color:var(--muted);font-size:0.85rem">录音时自动识别（英文），不依赖云端批改权限，可配合复制到其他 AI。</p>' +
               '<div id="realWebSpeechBox" class="transcript-box">' +
-              (escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示，建议 Chrome / Edge）') +
+              (escapeHtml(state.realWebSpeechLive || '') || '（开始录音后显示）') +
               '</div>' +
               '<button type="button" class="primary" style="margin-top:0.5rem" id="btnRealSaveTranscript">将当前转写加入记录</button>' +
               '</div>' +
               '<div class="card">' +
               '<h3 style="margin:0 0 0.5rem;font-size:1.05rem">腾讯云实时转写（流式）</h3>' +
-              '<p style="color:var(--muted);font-size:0.85rem">浏览器直连腾讯云 WebSocket；需在 server/.env 配置 <code>TENCENT_ASR_*</code>。凡在线登录学生均可使用（与云端批改开通无关）；在线登录时内容同步教师端。</p>' +
               '<div id="realTencentBox" class="transcript-box">' +
-              (escapeHtml(state.realTencentLive || '') || '（服务端配置 ASR 后，录音中显示）') +
+              (escapeHtml(state.realTencentLive || '') || '（录音中显示）') +
               '</div>' +
               '<button type="button" class="primary" style="margin-top:0.5rem" id="btnTencentSaveTranscript">将腾讯云转写加入记录</button>' +
               '</div>';
@@ -4269,19 +4314,13 @@
             ${navHtml}
             <div class="card">
               <h2>题目</h2>
-              <p style="color:var(--muted);margin-top:0.5rem">${escapeHtml(stuPrompt)}</p>
-              ${stuCloudHint}
               <p style="color:var(--text);margin-top:0.75rem;white-space:pre-wrap">${escapeHtml(q.refText || '')}</p>
             </div>
             <div class="card">
-              <p style="color:var(--muted);font-size:0.9rem;margin-bottom:0.5rem">录音与云端评测：</p>
               ${recording ? `<div class="countdown-box ${state.realTestSecondsLeft <= 10 ? 'warn' : ''}" style="margin-bottom:1rem"><span class="num" id="realCountdownNum">${state.realTestSecondsLeft}</span><span style="color:var(--muted);font-size:1rem"> 秒</span></div>` : ''}
               <button class="primary" id="btnRealRecord" ${loading ? 'disabled' : ''}>
                 ${recording ? '停止录音并开始评测' : '开始录音'}
               </button>
-              <p style="color:var(--muted);font-size:0.8rem;margin-top:0.5rem">
-                录音时请保持网络畅通。若浏览器首次弹窗，请允许访问麦克风。
-              </p>
             </div>
             ${transcriptBlockReal}
             ${statusHtml}
@@ -4603,10 +4642,8 @@
             <div class="header"><h1>Upload Recording</h1><div class="header-right"><button data-action="backMain">返回</button> ${headerRight()}</div></div>
             <div class="card">
               <h2>上传录音文件</h2>
-              <p style="color:var(--muted);margin-top:0.5rem;font-size:0.9rem">支持 mp3 / m4a / wav 等音频格式，时长建议在 45 秒左右。</p>
               <input type="file" id="uploadAudioFile" accept="audio/*" style="margin-top:0.75rem">
               <button class="primary" id="btnUploadEval" style="margin-top:0.75rem" ${loading ? 'disabled' : ''}>开始评测</button>
-              <p style="color:var(--muted);font-size:0.8rem;margin-top:0.5rem">录音内容将发送到本机口语评测后端和语法检查服务，仅用于本地练习。</p>
             </div>
             ${statusHtml}
             ${error ? '<div class="card" style="border-color:var(--wrong);color:var(--wrong)"><strong>' + escapeHtml(error) + '</strong></div>' : ''}
@@ -5594,7 +5631,6 @@
             <div class="card">
               <h2>${section.title} · 口语作答</h2>
               <p style="color:var(--text);margin:0.5rem 0">${section.speakingPrompt}</p>
-              <p style="font-size:0.85rem;color:var(--muted)">使用浏览器语音转文字，点击「开始答题」后 45 秒倒计时。允许在提交前修改一次文本。</p>
             </div>
             ${showStart ? '<div class="card"><button class="primary" id="btnStart">开始答题</button></div>' : ''}
             ${showCountdown ? `
