@@ -11,3 +11,5 @@ pydub>=0.25.0
 # 腾讯云 ASR（一句话识别），与智聆配合返回真实口述 asrTranscript
 # 若 pip 报 hash 不匹配：pip install --no-cache-dir tencentcloud-sdk-python
 tencentcloud-sdk-python>=3.0.0
+# TokenHub（与微信小程序 homework 批改同源）
+openai>=1.40.0

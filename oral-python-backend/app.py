@@ -29,6 +29,8 @@ import base64
 import requests
 import urllib.parse
 import json
+import unicodedata
+from typing import Any, Optional
 
 from flask import Flask, request, jsonify
 
@@ -55,6 +57,15 @@ TENCENT_ASR_REGION = os.environ.get("TENCENT_ASR_REGION", "ap-guangzhou")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
 OLLAMA_ENABLED = str(os.environ.get("OLLAMA_ENABLED", "1")).strip().lower() in ["1", "true", "yes", "on"]
+# 腾讯云 TokenHub（DeepSeek 等），与 homework-miniapp 批改同源
+LKE_API_KEY = os.environ.get("LKE_API_KEY", "")
+LKE_BASE_URL = os.environ.get("LKE_BASE_URL", "https://tokenhub.tencentmaas.com/v1").rstrip("/")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v3.1-terminus")
+DEEPSEEK_MODELS_ENV = (os.environ.get("DEEPSEEK_MODELS") or "").strip()
+_DEEPSEEK_FALLBACKS = (
+    "deepseek-v3.2",
+    "deepseek-v3.1-terminus",
+)
 
 
 @app.route("/api/health", methods=["GET"])
@@ -77,12 +88,22 @@ def api_health():
         pydub_ok = True
     except ImportError:
         pass
+    openai_ok = False
+    try:
+        import openai  # noqa: F401
+
+        openai_ok = True
+    except ImportError:
+        pass
     return jsonify(
         ok=True,
         service="oral-python-backend",
         asr_secret_id_configured=bool(TENCENT_ASR_SECRET_ID and TENCENT_ASR_SECRET_ID.strip()),
         asr_secret_key_configured=bool(TENCENT_ASR_SECRET_KEY and TENCENT_ASR_SECRET_KEY.strip()),
         tencentcloud_sdk_installed=sdk_ok,
+        lke_key_configured=bool(LKE_API_KEY and LKE_API_KEY.strip()),
+        lke_base_url=LKE_BASE_URL,
+        openai_installed=openai_ok,
         soe_configured=bool(
             TENCENT_APP_ID and TENCENT_SECRET_ID and TENCENT_SECRET_KEY
         ),
@@ -814,6 +835,188 @@ def _tencent_sentence_asr_transcript(audio_bytes: bytes, voice_format: int):
         return None, "缺少依赖：pip install tencentcloud-sdk-python（" + str(e) + "）"
     except Exception as e:
         return None, "ASR 调用失败：" + str(e)[:400]
+
+
+# ---- 腾讯云 TokenHub 批改（与 homework-miniapp-server 同源，供 standalone Interview / 上传录音）----
+
+
+def _asr_plain_no_punct(s: str) -> str:
+    if not s or not str(s).strip():
+        return ""
+    out: list[str] = []
+    for ch in s:
+        if unicodedata.category(str(ch)).startswith("P"):
+            continue
+        out.append(str(ch))
+    return " ".join("".join(out).split())
+
+
+CORRECTION_SYSTEM = """你是英语口语批改助手。根据学生口述转写文本，输出 JSON（不要 markdown）：
+{
+  "corrected_text": "修改后的英文（书面、自然）",
+  "feedback_zh": "2～4句中文简短反馈",
+  "highlights": [ { "issue": "问题类型", "hint": "一句中文提示" } ]
+}
+只输出 JSON。若转写几乎为空，corrected_text 与 feedback_zh 说明无法识别。"""
+
+
+def _correction_model_candidates() -> list[str]:
+    if DEEPSEEK_MODELS_ENV:
+        return [x.strip() for x in DEEPSEEK_MODELS_ENV.split(",") if x.strip()]
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in (DEEPSEEK_MODEL, *_DEEPSEEK_FALLBACKS):
+        if m and m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
+def _parse_correction_json_text(text: str) -> dict[str, Any]:
+    t = (text or "").strip()
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError:
+        m = re.search(r"\{[\s\S]*\}", t)
+        if m:
+            return json.loads(m.group(0))
+        raise ValueError("模型未返回合法 JSON")
+
+
+def _deepseek_correct(transcript: str) -> dict[str, Any]:
+    from openai import OpenAI
+
+    if not LKE_API_KEY or not LKE_API_KEY.strip():
+        raise RuntimeError("未配置 LKE_API_KEY（TokenHub）")
+    client = OpenAI(api_key=LKE_API_KEY, base_url=LKE_BASE_URL)
+    messages = [
+        {"role": "system", "content": CORRECTION_SYSTEM},
+        {"role": "user", "content": f"学生口述转写：\n{transcript}"},
+    ]
+    last_err: Optional[Exception] = None
+    for model in _correction_model_candidates():
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.3,
+            )
+        except Exception as e:
+            last_err = e
+            continue
+        text = (completion.choices[0].message.content or "").strip()
+        try:
+            return _parse_correction_json_text(text)
+        except (json.JSONDecodeError, ValueError) as e2:
+            last_err = e2
+            continue
+    chain = " → ".join(_correction_model_candidates())
+    raise RuntimeError(
+        f"TokenHub 批改均失败（{chain}）。请检查 LKE_BASE_URL、LKE_API_KEY 与 DEEPSEEK_MODELS。最后: {last_err!r}"
+    )
+
+
+def _tokenhub_raw_to_standalone_json(transcript: str, raw: dict[str, Any]) -> dict[str, Any]:
+    """将模型 JSON 转为 standalone.html 的 evalData 形状（与 asr-eval 成功时字段兼容）。"""
+    corrected = (raw.get("corrected_text") or "").strip()
+    feedback_zh = (raw.get("feedback_zh") or "").strip()
+    highlights = raw.get("highlights")
+    if not isinstance(highlights, list):
+        highlights = []
+    grammar_items: list[dict[str, str]] = []
+    for h in highlights[:20]:
+        if not isinstance(h, dict):
+            continue
+        issue = str(h.get("issue") or "").strip()
+        hint = str(h.get("hint") or "").strip()
+        reason = (issue + (("：" + hint) if hint else ""))[:220]
+        grammar_items.append(
+            {
+                "original": "",
+                "suggestion": hint,
+                "reason_zh": reason or "要点",
+            }
+        )
+    penalty = min(len(grammar_items) * 2, 40)
+    overall = max(0, 100 - penalty)
+    return {
+        "ok": True,
+        "transcript": transcript,
+        "asrPlainNoPunct": _asr_plain_no_punct(transcript),
+        "correctedTranscript": corrected,
+        "grammarItems": grammar_items,
+        "logicChain": [],
+        "logicIssuesZh": [],
+        "connectionCorrections": [],
+        "overall": overall,
+        "feedbackZh": feedback_zh,
+        "correction": raw,
+    }
+
+
+@app.route("/api/interview-correct", methods=["POST", "OPTIONS"])
+def interview_correct():
+    """
+    浏览器 Web Speech / 流式转写已得到文本时，只调 TokenHub 批改（不再上传整段音频给 ASR）。
+    JSON: { "transcript": "..." }
+    """
+    if request.method == "OPTIONS":
+        return ("", 204)
+    if not LKE_API_KEY or not LKE_API_KEY.strip():
+        return jsonify(ok=False, error="未配置 LKE_API_KEY（TokenHub），见 oral-python-backend/.env"), 500
+    data = request.get_json(silent=True) or {}
+    transcript = (data.get("transcript") or "").strip()
+    if len(transcript) < 2:
+        return jsonify(ok=False, error="transcript 过短或为空"), 400
+    try:
+        raw = _deepseek_correct(transcript)
+        return jsonify(_tokenhub_raw_to_standalone_json(transcript, raw))
+    except Exception as e:
+        return jsonify(ok=False, error=str(e)), 502
+
+
+@app.route("/api/upload-audio-correct", methods=["POST", "OPTIONS"])
+def upload_audio_correct():
+    """
+    无浏览器转写时：服务端腾讯云一句话 ASR + TokenHub 批改（替代原 asr-eval 的 Ollama 部分）。
+    form: audio (file)
+    """
+    if request.method == "OPTIONS":
+        return ("", 204)
+    if not LKE_API_KEY or not LKE_API_KEY.strip():
+        return jsonify(ok=False, error="未配置 LKE_API_KEY（TokenHub）"), 500
+    if not TENCENT_ASR_SECRET_ID or not TENCENT_ASR_SECRET_KEY:
+        return jsonify(ok=False, error="未配置 TENCENT_ASR_SECRET_ID / TENCENT_ASR_SECRET_KEY"), 500
+    if "audio" not in request.files:
+        return jsonify(ok=False, error="缺少音频文件 audio"), 400
+    audio = request.files["audio"]
+    if not audio or not audio.filename:
+        return jsonify(ok=False, error="缺少音频文件 audio"), 400
+    audio_bytes = audio.read()
+    if len(audio_bytes) < 100:
+        return jsonify(ok=False, error="音频过短或为空"), 400
+    filename = (audio.filename or "").lower()
+    if any(
+        ext in filename for ext in (".webm", ".weba", ".m4a")
+    ) or "webm" in (request.content_type or ""):
+        wav_b, conv_err = _browser_audio_bytes_to_wav_16k_mono(audio_bytes)
+        if conv_err or not wav_b:
+            return jsonify(ok=False, error="音频转码失败：" + (conv_err or "未知错误")), 400
+        audio_bytes = wav_b
+        voice_format = 1
+    else:
+        voice_format = 1 if filename.endswith(".wav") else 2
+    asr_t, asr_err = _tencent_sentence_asr_transcript(audio_bytes, voice_format)
+    if asr_err or not asr_t:
+        return jsonify(
+            ok=False, error=asr_err or "ASR 未返回文本", transcript=None
+        ), 502
+    try:
+        raw = _deepseek_correct(asr_t)
+        body = _tokenhub_raw_to_standalone_json(asr_t, raw)
+        return jsonify(body)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e), transcript=asr_t), 502
 
 
 @app.route("/api/oral-eval", methods=["POST", "OPTIONS"])

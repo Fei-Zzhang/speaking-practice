@@ -268,6 +268,7 @@
         if (PORTAL !== 'student') return 'home';
         if (state.mainChoice === 'studentBankPick') return 'bank';
         if (state.mainChoice === 'real') return 'bank';
+        if (state.mainChoice === 'upload') return 'bank';
         if (state.mainChoice === 'studentMaterial') return 'practice';
         if (
           state.mainChoice === 'studentTasks' ||
@@ -314,7 +315,8 @@
         '<li>2️⃣ 读题；</li>' +
         '<li>3️⃣ 开始录音；</li>' +
         '<li>4️⃣ 结束录音；</li>' +
-        '<li>5️⃣ 等待老师反馈评分；</li>' +
+        '<li>5️⃣ 结束录音后由云端 <strong>TokenHub</strong> 批改（与微信小程序同源），查看修改后与中文反馈；</li>' +
+        '<li>6️⃣ 也可在「上传录音批改」中直接上传音频文件，由服务端 ASR + TokenHub 评测。</li>' +
         '</ol>';
 
       var HELP_HTML_PRACTICE =
@@ -965,6 +967,18 @@
       // 根据总体得分 / 准确度 / 流利度 / 逐词得分 + 语法检查结果，生成中文反馈（明确到具体单词）
       function buildSpeakingFeedback(result) {
         if (!result) return '';
+        if (result.feedbackZh && String(result.feedbackZh).trim()) {
+          var fb0 = String(result.feedbackZh).trim();
+          var gItems = Array.isArray(result.grammarItems) ? result.grammarItems : [];
+          if (gItems.length) {
+            var lines = gItems.slice(0, 10).map(function (it, i) {
+              var r = (it && it.reason_zh) || (it && it.suggestion) || '—';
+              return (i + 1) + '）' + r;
+            });
+            return fb0 + '\n\n【要点】\n' + lines.join('\n');
+          }
+          return fb0;
+        }
         var overall = typeof result.overall === 'number' ? result.overall : null;
         var rawStr = result.pronDetail || result.raw || '';
         var detail = null;
@@ -1514,7 +1528,72 @@
           reader.readAsDataURL(blob);
         });
       }
-      // Safari Network 里 asr-eval 的 Response/Preview 常显示失败；用 ?debug=1 在页面上直接看完整 JSON
+      /** Interview：优先用 Web Speech/腾讯云流式已得到的转写，调 Python TokenHub；无转写再上传整段到服务端 ASR+TokenHub */
+      function getInterviewTranscriptForGrading() {
+        var a = String((state && state.realTencentLive) || '').trim();
+        var b = String((state && state.realWebSpeechLive) || '').trim();
+        if (a && b) return a.length >= b.length ? a : b;
+        return a || b || '';
+      }
+      function tryUploadAudioTokenHub(finishEval, blob, filename) {
+        var fd = new FormData();
+        fd.append('audio', blob, filename || 'upload.webm');
+        fetch(API_BASE + '/api/upload-audio-correct', { method: 'POST', body: fd })
+          .then(function (r) {
+            return r.json().catch(function () { return {}; }).then(function (d) {
+              return { okHttp: r.ok, data: d };
+            });
+          })
+          .then(function (res) {
+            var data = res.data;
+            if (!res.okHttp || (data && data.ok === false)) {
+              finishEval(data, (data && (data.error || data.message)) || '上传批改失败');
+              return;
+            }
+            finishEval(data, null);
+          })
+          .catch(function () {
+            finishEval(null, '无法连接 ' + API_BASE + '，请确认 Python 服务与 TokenHub 已配置。');
+          });
+      }
+      function runInterviewGrading(finishEval, blob) {
+        var transcript = getInterviewTranscriptForGrading();
+        if (transcript && transcript.length >= 2) {
+          fetch(API_BASE + '/api/interview-correct', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript: transcript })
+          })
+            .then(function (r) {
+              return r.json().catch(function () { return {}; }).then(function (d) {
+                return { okHttp: r.ok, data: d };
+              });
+            })
+            .then(function (res) {
+              var data = res.data;
+              if (!res.okHttp || (data && data.ok === false)) {
+                if (blob && blob.size > 0) {
+                  tryUploadAudioTokenHub(finishEval, blob, 'interview-fallback.webm');
+                  return;
+                }
+                finishEval(data, (data && (data.error || data.message)) || '批改失败');
+                return;
+              }
+              finishEval(data, null);
+            })
+            .catch(function () {
+              if (blob && blob.size > 0) tryUploadAudioTokenHub(finishEval, blob, 'interview-fallback.webm');
+              else finishEval(null, '无法连接批改服务');
+            });
+          return;
+        }
+        if (blob && blob.size > 0) {
+          tryUploadAudioTokenHub(finishEval, blob, 'interview.webm');
+          return;
+        }
+        finishEval(null, '没有可用于批改的转写。请重试，并确认已允许麦克风与语音识别。');
+      }
+      // Safari 里部分接口的 Response/Preview 可能不完整；?debug=1 可在页内看完整 JSON
       function isOralDebugMode() {
         try {
           if (/[?&]debug=1(?:&|$)/.test(window.location.search || '')) return true;
@@ -1820,7 +1899,7 @@
           return;
         }
 
-        // 学生端 · 已登录：题库 → LNR / Interview 二选一
+        // 学生端 · 已登录：题库 → LNR / Interview / 上传录音批改
         if (PORTAL === 'student' && state.mainChoice === 'studentBankPick' && currentUser) {
           root.innerHTML =
             studentTopNavHtml() +
@@ -1828,11 +1907,18 @@
             '<div class="main-choice">' +
             '<div class="card" data-action="stuPickLnr">' +
             '<h2>Listen &amp; Repeat</h2>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">智聆 SOE 发音评测（与此前一致，未改接口）</p>' +
             '<button type="button" class="primary" style="margin-top:0.5rem">进入 LNR</button>' +
             '</div>' +
             '<div class="card" data-action="stuPickInterview">' +
             '<h2>Interview</h2>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">Web Speech / 流式转写 + 结束录音后 <strong>TokenHub</strong> 批改</p>' +
             '<button type="button" class="primary" style="margin-top:0.5rem">进入 Interview</button>' +
+            '</div>' +
+            '<div class="card" data-action="stuPickUpload">' +
+            '<h2>上传录音批改</h2>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">自选音频：服务端腾讯云 ASR 转写 + <strong>TokenHub</strong> 批改</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
             '</div>' +
             '</div>';
           bindStudentTopNav(root);
@@ -1855,6 +1941,13 @@
             state.realTestError = '';
             state.realWebSpeechLive = '';
             state.realTencentLive = '';
+            render();
+          };
+          root.querySelector('[data-action=stuPickUpload]').onclick = function () {
+            state.mainChoice = 'upload';
+            state.realTestLoading = false;
+            state.realTestError = '';
+            state.realTestResult = null;
             render();
           };
           return;
@@ -2305,11 +2398,23 @@
                 <h2>今日作业提交</h2>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
+              <div class="card" data-action="main" data-choice="upload">
+                <h2>上传录音批改</h2>
+                <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">试测：与学生活页相同，<strong>服务端 ASR + TokenHub</strong>（<code>/api/upload-audio-correct</code>）</p>
+                <button class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
             </div>
           `;
           root.querySelectorAll('[data-action=main]').forEach(function (btn) {
             btn.onclick = function () {
               state.mainChoice = btn.getAttribute('data-choice');
+              if (state.mainChoice === 'upload') {
+                state.realTestLoading = false;
+                state.realTestError = '';
+                state.realTestResult = null;
+                render();
+                return;
+              }
               if (state.mainChoice === 'teacherAssign') {
                 state.practiceBank = null;
                 state.practiceBankLoading = false;
@@ -4497,8 +4602,6 @@
                       state.realTestResult = null;
                       render();
 
-                      var useNodeProxy = PORTAL === 'student' && API_NODE && getCurrentUser();
-
                       function finishEval(data, errMsg) {
                         state.realTestLoading = false;
                         if (errMsg) {
@@ -4517,59 +4620,8 @@
                         render();
                       }
 
-                      if (useNodeProxy) {
-                        blobToBase64(blob, function (b64) {
-                          if (!b64) {
-                            finishEval(null, '无法读取录音数据');
-                            return;
-                          }
-                          fetch(
-                            API_NODE +
-                              '/api/student/interview-self-eval?username=' +
-                              encodeURIComponent(getStudentTaskName()),
-                            {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ audioB64: b64, refText: realCurrentRefText || '' })
-                            }
-                          )
-                            .then(function (r) {
-                              return r.json().catch(function () {
-                                return {};
-                              }).then(function (data) {
-                                return { okHttp: r.ok, data: data };
-                              });
-                            })
-                            .then(function (res) {
-                              var data = res.data;
-                              if (!res.okHttp) {
-                                finishEval(data, (data && data.message) || '评测请求失败');
-                                return;
-                              }
-                              finishEval(data, null);
-                            })
-                            .catch(function () {
-                              finishEval(null, '无法连接 Node 评测接口');
-                            });
-                        });
-                      } else {
-                        const fd = new FormData();
-                        fd.append('audio', blob, 'real-test.webm');
-                        fd.append('refText', realCurrentRefText || '');
-                        fd.append('evalMode', '3');
-                        fetch(API_BASE + '/api/asr-eval', { method: 'POST', body: fd })
-                          .then(function (r) {
-                            return r.json().catch(function () {
-                              return {};
-                            });
-                          })
-                          .then(function (data) {
-                            finishEval(data, null);
-                          })
-                          .catch(function () {
-                            finishEval(null, '无法连接口语评测后端，请确认 Python 服务已运行。');
-                          });
-                      }
+                      // Interview 批改：Python TokenHub（/api/interview-correct 或 /api/upload-audio-correct），不再用 asr-eval/Ollama
+                      runInterviewGrading(finishEval, blob);
                     }, 150);
                   };
                   realRecorder.start(500);
@@ -4633,14 +4685,15 @@
           return;
         }
 
-        // ---------- Upload Recording：上传录音文件做评测 ----------
+        // ---------- 上传录音：服务端 ASR + TokenHub（/api/upload-audio-correct）----------
         if (state.mainChoice === 'upload') {
           const loading = state.realTestLoading;
           const result = state.realTestResult;
           const error = state.realTestError;
+          const stNav = PORTAL === 'student' ? studentTopNavHtml() : '';
 
           const statusHtml = loading
-            ? '<div class="card" style="border-color:var(--accent);color:var(--accent)"><strong>正在评测，请稍候…</strong></div>'
+            ? '<div class="card" style="border-color:var(--accent);color:var(--accent)"><strong>正在上传并评测（ASR + TokenHub），请稍候…</strong></div>'
             : '';
 
           const resultHtml = result ? (function () {
@@ -4655,25 +4708,45 @@
             `;
           })() : '';
 
-          root.innerHTML = `
-            <div class="header"><h1>Upload Recording</h1><div class="header-right"><button data-action="backMain">返回</button> ${headerRight()}</div></div>
+          root.innerHTML =
+            stNav +
+            `
+            <div class="header"><h1>上传录音批改</h1><div class="header-right"><button data-action="backUpload" type="button">返回</button> ${PORTAL === 'student' ? '' : headerRight()}</div></div>
             <div class="card">
-              <h2>上传录音文件</h2>
+              <h2>选择本地音频</h2>
+              <p style="color:var(--muted);font-size:0.9rem;margin:0.25rem 0 0.5rem">由 Python 服务调用<strong>腾讯云一句话 ASR</strong> 转写，再经 <strong>TokenHub</strong> 批改。支持常见格式（m4a/webm/mp3 等，服务端会转码）。</p>
               <input type="file" id="uploadAudioFile" accept="audio/*" style="margin-top:0.75rem">
-              <button class="primary" id="btnUploadEval" style="margin-top:0.75rem" ${loading ? 'disabled' : ''}>开始评测</button>
+              <button class="primary" id="btnUploadEval" type="button" style="margin-top:0.75rem" ${loading ? 'disabled' : ''}>开始评测</button>
             </div>
             ${statusHtml}
             ${error ? '<div class="card" style="border-color:var(--wrong);color:var(--wrong)"><strong>' + escapeHtml(error) + '</strong></div>' : ''}
             ${resultHtml}
           `;
 
-          root.querySelector('[data-action=backMain]').onclick = function () {
-            state.mainChoice = null;
+          if (PORTAL === 'student' && root.querySelector) {
+            bindStudentTopNav(root);
+          }
+
+          root.querySelector('[data-action=backUpload]').onclick = function () {
+            state.mainChoice = PORTAL === 'student' && currentUser ? 'studentBankPick' : null;
+            if (PORTAL === 'student') state.studentNav = 'bank';
             state.realTestLoading = false;
             state.realTestError = '';
             state.realTestResult = null;
             render();
           };
+          if (PORTAL === 'teacher') {
+            var lou = root.querySelector('[data-action=logout]');
+            if (lou) {
+              lou.onclick = function () {
+                clearCurrentUser();
+                stopStudentReadTimer();
+                state.mainChoice = null;
+                state.view = 'list';
+                render();
+              };
+            }
+          }
 
           const btnUpload = document.getElementById('btnUploadEval');
           const fileInput = document.getElementById('uploadAudioFile');
@@ -4686,18 +4759,15 @@
               }
               const fd = new FormData();
               fd.append('audio', file, file.name);
-              // 上传录音不必强制有参考文本，evalMode=3 使用自由说模式
-              fd.append('refText', '');
-              fd.append('evalMode', '3');
               state.realTestLoading = true;
               state.realTestError = '';
               state.realTestResult = null;
               render();
-              fetch(API_BASE + '/api/asr-eval', { method: 'POST', body: fd })
+              fetch(API_BASE + '/api/upload-audio-correct', { method: 'POST', body: fd })
                 .then(r => r.json().catch(() => ({})))
                 .then(data => {
                   if (!data || data.ok === false) {
-                    state.realTestError = data && data.error ? data.error : '口语评测失败，请稍后重试。';
+                    state.realTestError = data && data.error ? data.error : '上传批改失败，请稍后再试。';
                     state.realTestResult = null;
                     state.realTestLoading = false;
                     render();
@@ -4710,7 +4780,7 @@
                 })
                 .catch(() => {
                   state.realTestLoading = false;
-                  state.realTestError = '无法连接口语评测后端，请确认本机 http://localhost:5001 已运行。';
+                  state.realTestError = '无法连接 ' + API_BASE + '，请确认 Python 已部署且已配置 ASR+TokenHub。';
                   state.realTestResult = null;
                   render();
                 });
