@@ -128,16 +128,47 @@ def _which_ffprobe():
     return shutil.which("ffprobe")
 
 
-def _ffmpeg_stdin_to_wav_16k_mono_try_formats(audio_bytes: bytes):
-    """依次尝试让 ffmpeg 猜测格式 / 指定 webm，提高浏览器 WebM 兼容性。"""
+def _ffmpeg_stdin_to_wav_16k_mono_try_formats(
+    audio_bytes: bytes, filename_hint: str = ""
+):
+    """
+    依次尝试 ffmpeg 自动检测 + 按扩展名指定 demuxer，输出 16kHz 单声道 pcm_s16le WAV。
+    用于 m4a/mp3 等：避免未转码直传腾讯云时云端解码失败（ErrorInvalidVoicedata）。
+    """
     ff = _which_ffmpeg()
     if not ff:
         return None, "未找到 ffmpeg"
-    attempts = [
-        (["-i", "pipe:0"], audio_bytes),
-        (["-f", "webm", "-i", "pipe:0"], audio_bytes),
-        (["-f", "matroska", "-i", "pipe:0"], audio_bytes),
-    ]
+    fn = (filename_hint or "").lower()
+    attempts: list[tuple[list[str], bytes]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    def _add(cmd_prefix: list[str], data: bytes) -> None:
+        key = tuple(cmd_prefix)
+        if key in seen:
+            return
+        seen.add(key)
+        attempts.append((cmd_prefix, data))
+
+    _add(["-i", "pipe:0"], audio_bytes)
+    if fn.endswith(".mp3") or "mpeg" in fn or "mp3" in fn:
+        _add(["-f", "mp3", "-i", "pipe:0"], audio_bytes)
+    if fn.endswith((".m4a", ".mp4", ".mov", ".caf", ".3gp", ".3gpp")):
+        _add(["-f", "mov", "-i", "pipe:0"], audio_bytes)
+    if fn.endswith(".aac"):
+        _add(["-f", "aac", "-i", "pipe:0"], audio_bytes)
+    if fn.endswith(".flac"):
+        _add(["-f", "flac", "-i", "pipe:0"], audio_bytes)
+    if fn.endswith((".ogg", ".opus")):
+        _add(["-f", "ogg", "-i", "pipe:0"], audio_bytes)
+    if fn.endswith(".wav"):
+        _add(["-f", "wav", "-i", "pipe:0"], audio_bytes)
+    if fn.endswith((".webm", ".weba")) or "webm" in fn:
+        _add(["-f", "webm", "-i", "pipe:0"], audio_bytes)
+        _add(["-f", "matroska", "-i", "pipe:0"], audio_bytes)
+    else:
+        # 无扩展名或非常见名：仍试浏览器常见容器
+        _add(["-f", "webm", "-i", "pipe:0"], audio_bytes)
+        _add(["-f", "matroska", "-i", "pipe:0"], audio_bytes)
     last_err = None
     for extra_pre, data in attempts:
         try:
@@ -155,7 +186,12 @@ def _ffmpeg_stdin_to_wav_16k_mono_try_formats(audio_bytes: bytes):
             ]
             proc = subprocess.run(args, input=data, capture_output=True, timeout=120)
             stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
-            if proc.returncode == 0 and (proc.stdout or b"") and len(proc.stdout) > 100:
+            if (
+                proc.returncode == 0
+                and (proc.stdout or b"")
+                and len(proc.stdout) > 100
+                and (proc.stdout[:4] == b"RIFF")
+            ):
                 return proc.stdout, None
             last_err = stderr[:900] or f"exit {proc.returncode}"
         except Exception as e:
@@ -209,6 +245,29 @@ def _browser_audio_bytes_to_wav_16k_mono(audio_bytes: bytes):
         parts.append("pydub：" + str(last_pydub)[:400])
     if err2:
         parts.append("ffmpeg：" + str(err2)[:500])
+    return None, " | ".join(parts) if parts else "音频转码失败"
+
+
+def _normalize_audio_bytes_for_tencent_rec_file(
+    audio_bytes: bytes, filename: str
+) -> tuple[Optional[bytes], Optional[str]]:
+    """
+    CreateRecTask 前统一为 16k 单声道 PCM WAV。
+    部分 m4a/mp3 若不经转码直传，腾讯云会报 ErrorInvalidVoicedata（Audio decoding failed）。
+    """
+    wav, err = _ffmpeg_stdin_to_wav_16k_mono_try_formats(
+        audio_bytes, (filename or "").lower()
+    )
+    if wav and len(wav) > 100 and wav[:4] == b"RIFF":
+        return wav, None
+    w2, err2 = _browser_audio_bytes_to_wav_16k_mono(audio_bytes)
+    if w2 and len(w2) > 100 and w2[:4] == b"RIFF":
+        return w2, None
+    parts: list[str] = []
+    if err:
+        parts.append("ffmpeg: " + (err or "")[:500])
+    if err2:
+        parts.append("备用转码: " + (err2 or "")[:500])
     return None, " | ".join(parts) if parts else "音频转码失败"
 
 
@@ -1090,14 +1149,16 @@ def upload_audio_correct():
     audio_bytes = audio.read()
     if len(audio_bytes) < 100:
         return jsonify(ok=False, error="音频过短或为空"), 400
-    filename = (audio.filename or "").lower()
-    if any(
-        ext in filename for ext in (".webm", ".weba", ".m4a")
-    ) or "webm" in (request.content_type or ""):
-        wav_b, conv_err = _browser_audio_bytes_to_wav_16k_mono(audio_bytes)
-        if conv_err or not wav_b:
-            return jsonify(ok=False, error="音频转码失败：" + (conv_err or "未知错误")), 400
-        audio_bytes = wav_b
+    filename = (audio.filename or "upload.bin").lower()
+    wav_b, conv_err = _normalize_audio_bytes_for_tencent_rec_file(audio_bytes, filename)
+    if conv_err or not wav_b:
+        return jsonify(
+            ok=False,
+            error="音频转码失败（本机或云端无法解析该文件）。可换用：Chrome 导出的 webm、标准 "
+            "mp3/wav，或先在本机用播放器另存为 16kHz 单声道 WAV 再上传。详情："
+            + (conv_err or "未知")[:500],
+        ), 400
+    audio_bytes = wav_b
     try:
         asr_t = _asr_file_recognize_long_audio(audio_bytes)
     except Exception as e:

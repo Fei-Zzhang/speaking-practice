@@ -699,6 +699,370 @@ function studentApiName(req) {
   return (q.username || q.studentName || '').trim();
 }
 
+// ---------- 班级 + 学生入班 + 录音打卡（AI 与 /api/upload-audio-correct 同源，成本见 CLASSROOM_CHECKIN_DAILY_LIMIT）----------
+const CLASSROOM_CHECKIN_DAILY_LIMIT = Math.min(
+  500,
+  Math.max(0, parseInt(String(process.env.CLASSROOM_CHECKIN_DAILY_LIMIT || '5').trim(), 10) || 0)
+);
+/** 0 = 不限制；否则按每个学生在每个班「UTC 自然日」内打卡次数 */
+
+function startOfUtcDayIso() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+async function userHasRole(username, role) {
+  const u = String(username || '').trim();
+  if (!u) return false;
+  const { data, error } = await supabase.from('users').select('role').eq('username', u).maybeSingle();
+  if (error || !data) return false;
+  return (data.role || 'student') === role;
+}
+
+/** 公开：学生浏览全部班级 */
+app.get('/api/classrooms', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('classrooms')
+      .select('id, name, description, teacher_username, created_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ ok: false, message: '查询失败' });
+    }
+    res.json({ ok: true, list: data || [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '查询失败' });
+  }
+});
+
+app.get('/api/teacher/classrooms', async (req, res) => {
+  try {
+    const username = (req.query.username || '').trim();
+    if (!username) return res.status(400).json({ ok: false, message: '需要 username' });
+    if (!(await userHasRole(username, 'teacher'))) {
+      return res.status(403).json({ ok: false, message: '仅教师可查看' });
+    }
+    const { data, error } = await supabase
+      .from('classrooms')
+      .select('id, name, description, created_at, teacher_username')
+      .eq('teacher_username', username)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ ok: false, message: '查询失败' });
+    }
+    res.json({ ok: true, list: data || [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '查询失败' });
+  }
+});
+
+app.post('/api/teacher/classrooms', async (req, res) => {
+  try {
+    const { teacherUsername, name, description } = req.body || {};
+    const t = (teacherUsername || '').trim();
+    const n = (name || '').trim();
+    if (!t || !n) return res.status(400).json({ ok: false, message: '需要 teacherUsername 与 name' });
+    if (n.length > 80) return res.status(400).json({ ok: false, message: '班级名称过长' });
+    if (!(await userHasRole(t, 'teacher'))) {
+      return res.status(403).json({ ok: false, message: '仅教师可创建班级' });
+    }
+    const { data, error } = await supabase
+      .from('classrooms')
+      .insert({
+        teacher_username: t,
+        name: n,
+        description: (description && String(description).trim()) || null,
+      })
+      .select('id, name, description, created_at')
+      .single();
+    if (error || !data) {
+      console.error(error);
+      return res.status(500).json({ ok: false, message: '创建失败' });
+    }
+    res.json({ ok: true, classroom: data });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '创建失败' });
+  }
+});
+
+app.delete('/api/teacher/classrooms/:id', async (req, res) => {
+  try {
+    const username = (req.query.username || '').trim();
+    const id = (req.params.id || '').trim();
+    if (!username || !id) return res.status(400).json({ ok: false, message: '参数不全' });
+    if (!(await userHasRole(username, 'teacher'))) {
+      return res.status(403).json({ ok: false, message: '仅教师可删除' });
+    }
+    const { data: row, error: fErr } = await supabase
+      .from('classrooms')
+      .select('id, teacher_username')
+      .eq('id', id)
+      .maybeSingle();
+    if (fErr || !row || row.teacher_username !== username) {
+      return res.status(403).json({ ok: false, message: '无权删除' });
+    }
+    const { error: dErr } = await supabase.from('classrooms').delete().eq('id', id);
+    if (dErr) return res.status(500).json({ ok: false, message: '删除失败' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '删除失败' });
+  }
+});
+
+app.get('/api/teacher/classrooms/:id/checkins', async (req, res) => {
+  try {
+    const teacherUsername = (req.query.username || '').trim();
+    const id = (req.params.id || '').trim();
+    if (!teacherUsername || !id) return res.status(400).json({ ok: false, message: '参数不全' });
+    if (!(await userHasRole(teacherUsername, 'teacher'))) {
+      return res.status(403).json({ ok: false, message: '仅教师可查看' });
+    }
+    const { data: croom, error: cErr } = await supabase
+      .from('classrooms')
+      .select('id, teacher_username, name')
+      .eq('id', id)
+      .maybeSingle();
+    if (cErr || !croom || croom.teacher_username !== teacherUsername) {
+      return res.status(403).json({ ok: false, message: '无权查看该班级' });
+    }
+    const { data: rows, error } = await supabase
+      .from('classroom_checkins')
+      .select('id, student_username, note, eval_data, submitted_at, teacher_feedback, teacher_feedback_at')
+      .eq('classroom_id', id)
+      .order('submitted_at', { ascending: false })
+      .limit(500);
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ ok: false, message: '查询失败' });
+    }
+    res.json({ ok: true, classroom: { id: croom.id, name: croom.name }, checkins: rows || [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '查询失败' });
+  }
+});
+
+app.post('/api/teacher/classroom-checkin-feedback', async (req, res) => {
+  try {
+    const { teacherUsername, checkinId, feedback } = req.body || {};
+    const t = (teacherUsername || '').trim();
+    const cid = (checkinId || '').trim();
+    const fb = (feedback != null ? String(feedback) : '').trim();
+    if (!t || !cid) return res.status(400).json({ ok: false, message: '需要 teacherUsername 与 checkinId' });
+    if (!(await userHasRole(t, 'teacher'))) {
+      return res.status(403).json({ ok: false, message: '仅教师可反馈' });
+    }
+    const { data: ch, error: chErr } = await supabase
+      .from('classroom_checkins')
+      .select('id, classroom_id')
+      .eq('id', cid)
+      .maybeSingle();
+    if (chErr || !ch) {
+      return res.status(404).json({ ok: false, message: '记录不存在' });
+    }
+    const { data: croom, error: rErr } = await supabase
+      .from('classrooms')
+      .select('teacher_username')
+      .eq('id', ch.classroom_id)
+      .maybeSingle();
+    if (rErr || !croom || croom.teacher_username !== t) {
+      return res.status(403).json({ ok: false, message: '无权操作该记录' });
+    }
+    const { error: uErr } = await supabase
+      .from('classroom_checkins')
+      .update({
+        teacher_feedback: fb || null,
+        teacher_feedback_at: new Date().toISOString(),
+      })
+      .eq('id', cid);
+    if (uErr) {
+      console.error(uErr);
+      return res.status(500).json({ ok: false, message: '保存失败' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '保存失败' });
+  }
+});
+
+/** 学生已加入的班级 */
+app.get('/api/student/classrooms', async (req, res) => {
+  try {
+    const username = (req.query.username || '').trim();
+    if (!username) return res.status(400).json({ ok: false, message: '需要 username' });
+    const { data: mems, error: mErr } = await supabase
+      .from('classroom_members')
+      .select('classroom_id, joined_at')
+      .eq('student_username', username);
+    if (mErr) {
+      console.error(mErr);
+      return res.status(500).json({ ok: false, message: '查询失败' });
+    }
+    const ids = (mems || []).map((m) => m.classroom_id).filter(Boolean);
+    if (!ids.length) {
+      return res.json({ ok: true, list: [] });
+    }
+    const { data: rooms, error: rErr } = await supabase
+      .from('classrooms')
+      .select('id, name, description, teacher_username, created_at')
+      .in('id', ids);
+    if (rErr) {
+      console.error(rErr);
+      return res.status(500).json({ ok: false, message: '查询失败' });
+    }
+    const joinMap = new Map((mems || []).map((m) => [m.classroom_id, m.joined_at]));
+    const list = (rooms || []).map((r) => ({ ...r, joinedAt: joinMap.get(r.id) || null }));
+    res.json({ ok: true, list });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '查询失败' });
+  }
+});
+
+app.post('/api/student/classrooms/join', async (req, res) => {
+  try {
+    const { studentUsername, classroomId } = req.body || {};
+    const s = (studentUsername || '').trim();
+    const cid = (classroomId || '').trim();
+    if (!s || !cid) return res.status(400).json({ ok: false, message: '需要 studentUsername 与 classroomId' });
+    if (!(await userHasRole(s, 'student'))) {
+      return res.status(403).json({ ok: false, message: '仅学生账号可入班' });
+    }
+    const { data: room, error: rErr } = await supabase
+      .from('classrooms')
+      .select('id')
+      .eq('id', cid)
+      .maybeSingle();
+    if (rErr || !room) {
+      return res.status(404).json({ ok: false, message: '班级不存在' });
+    }
+    const { error: insErr } = await supabase
+      .from('classroom_members')
+      .upsert({ classroom_id: cid, student_username: s }, { onConflict: 'classroom_id,student_username' });
+    if (insErr) {
+      console.error(insErr);
+      return res.status(500).json({ ok: false, message: '入班失败' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '入班失败' });
+  }
+});
+
+app.post('/api/student/classrooms/leave', async (req, res) => {
+  try {
+    const { studentUsername, classroomId } = req.body || {};
+    const s = (studentUsername || '').trim();
+    const cid = (classroomId || '').trim();
+    if (!s || !cid) return res.status(400).json({ ok: false, message: '需要 studentUsername 与 classroomId' });
+    if (!(await userHasRole(s, 'student'))) {
+      return res.status(403).json({ ok: false, message: '仅学生可操作' });
+    }
+    const { error: dErr } = await supabase
+      .from('classroom_members')
+      .delete()
+      .eq('classroom_id', cid)
+      .eq('student_username', s);
+    if (dErr) {
+      console.error(dErr);
+      return res.status(500).json({ ok: false, message: '退班失败' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '退班失败' });
+  }
+});
+
+app.post(
+  '/api/student/classroom-checkin',
+  express.raw({ type: 'audio/*', limit: '20mb' }),
+  async (req, res) => {
+    try {
+      const uname = (req.query.username || req.query.studentName || '').trim();
+      const classroomId = (req.query.classroomId || '').trim();
+      const note = String(req.query.note || '').trim().slice(0, 500);
+      if (!uname || !classroomId) {
+        return res.status(400).json({ ok: false, message: '需要 username 与 classroomId' });
+      }
+      if (!(await userHasRole(uname, 'student'))) {
+        return res.status(403).json({ ok: false, message: '仅学生可打卡' });
+      }
+      const { data: m, error: mErr } = await supabase
+        .from('classroom_members')
+        .select('classroom_id')
+        .eq('classroom_id', classroomId)
+        .eq('student_username', uname)
+        .maybeSingle();
+      if (mErr || !m) {
+        return res.status(403).json({ ok: false, message: '请先加入该班级再打卡' });
+      }
+      if (CLASSROOM_CHECKIN_DAILY_LIMIT > 0) {
+        const { count, error: cErr } = await supabase
+          .from('classroom_checkins')
+          .select('*', { count: 'exact', head: true })
+          .eq('classroom_id', classroomId)
+          .eq('student_username', uname)
+          .gte('submitted_at', startOfUtcDayIso());
+        if (cErr) {
+          console.error(cErr);
+          return res.status(500).json({ ok: false, message: '次数校验失败' });
+        }
+        if ((count || 0) >= CLASSROOM_CHECKIN_DAILY_LIMIT) {
+          return res.status(429).json({
+            ok: false,
+            message: `本班今日打卡已达上限（${CLASSROOM_CHECKIN_DAILY_LIMIT} 次/人，UTC 日）。可联系教师或明日再试。可在服务端设置 CLASSROOM_CHECKIN_DAILY_LIMIT。`,
+          });
+        }
+      }
+      const isRawAudio = Buffer.isBuffer(req.body);
+      const bodyObj = !isRawAudio && req.body && typeof req.body === 'object' ? req.body : {};
+      const b64 = typeof bodyObj.audioB64 === 'string' ? bodyObj.audioB64 : '';
+      const audioBytes = isRawAudio ? req.body : b64 ? Buffer.from(b64, 'base64') : null;
+      if (!audioBytes || audioBytes.length < 100) {
+        return res.status(400).json({ ok: false, message: '缺少有效音频' });
+      }
+      const form = new FormData();
+      const audioBlob = new Blob([audioBytes], { type: 'audio/webm' });
+      form.append('audio', audioBlob, 'classroom-checkin.webm');
+      const pyResp = await fetch(PYTHON_BASE_URL + '/api/upload-audio-correct', { method: 'POST', body: form });
+      const pyData = await pyResp.json().catch(() => ({}));
+      if (!pyResp.ok || !pyData || pyData.ok !== true) {
+        const msg = pyData && pyData.error ? pyData.error : '评测失败';
+        return res.status(500).json({ ok: false, message: String(msg) });
+      }
+      const { data: ins, error: insErr } = await supabase
+        .from('classroom_checkins')
+        .insert({
+          classroom_id: classroomId,
+          student_username: uname,
+          note: note || null,
+          eval_data: pyData,
+        })
+        .select('id, submitted_at')
+        .single();
+      if (insErr || !ins) {
+        console.error(insErr);
+        return res.status(500).json({ ok: false, message: '保存打卡失败' });
+      }
+      res.json({ ok: true, id: ins.id, submittedAt: ins.submitted_at, evalData: pyData });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ ok: false, message: '打卡失败' });
+    }
+  }
+);
+
 // ---------- 教师：布置任务 ----------
 app.get('/api/teacher/assignments', async (req, res) => {
   try {
@@ -1343,8 +1707,8 @@ const server = app.listen(PORT, () => {
   console.log('已连接 Supabase 云数据库');
   console.log('后端运行在 http://localhost:' + PORT);
   console.log(
-    'API: auth/register-student, auth/login, tencent-asr/sign, student/interview-live-transcript, teacher/interview-live-transcript, practice, teacher/assignments, teacher/student-interview-grading, teacher/evaluate-submission, student/assignments, student/submit, student/interview-self-eval, student/submit-audio' +
-      (String(process.env.POC_MODE || '').trim() === '1' ? ', poc/*' : '')
+    'API: auth, practice, tencent-asr/sign, teacher/assignments & classrooms, student/assignments & classrooms & classroom-checkin, submit-audio, …' +
+      (String(process.env.POC_MODE || '').trim() === '1' ? ' poc/*' : '')
   );
   if (TENCENT_ASR_APP_ID && TENCENT_ASR_SECRET_ID && TENCENT_ASR_SECRET_KEY) {
     console.log('腾讯云实时 ASR 签名：已配置 TENCENT_ASR_APP_ID / SECRET_*');

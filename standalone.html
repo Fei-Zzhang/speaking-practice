@@ -278,6 +278,7 @@
         if (state.mainChoice === 'studentBankPick') return 'bank';
         if (state.mainChoice === 'real') return 'bank';
         if (state.mainChoice === 'upload') return 'bank';
+        if (state.mainChoice === 'studentClassrooms') return 'bank';
         if (state.mainChoice === 'studentMaterial') return 'practice';
         if (
           state.mainChoice === 'studentTasks' ||
@@ -675,7 +676,21 @@
         /** Interview 自主练习页：浏览器实时转写缓冲 */
         realWebSpeechLive: '',
         /** Interview：腾讯云实时流式转写缓冲（与 realWebSpeechLive 并列展示） */
-        realTencentLive: ''
+        realTencentLive: '',
+        /** 教师：班级管理 */
+        teacherClassroomList: null,
+        teacherClassroomLoading: false,
+        teacherClassroomErr: '',
+        teacherClassroomDetailId: null,
+        teacherClassroomCheckins: null,
+        teacherClassroomCheckinsLoading: false,
+        /** 学生：浏览班级 / 入班 / 打卡 */
+        studentClassroomAll: null,
+        studentClassroomMy: null,
+        studentClassroomLoading: false,
+        studentClassroomErr: '',
+        studentClassroomCheckinBusy: false,
+        studentClassroomCheckinMsg: ''
       };
       let recognition = null;
       let timerId = null;
@@ -1908,6 +1923,214 @@
           return;
         }
 
+        // 学生端 · 班级浏览 / 入班 / 录音打卡
+        if (PORTAL === 'student' && state.mainChoice === 'studentClassrooms' && currentUser) {
+          function loadStudentClassrooms() {
+            state.studentClassroomLoading = true;
+            state.studentClassroomErr = '';
+            var u = encodeURIComponent(currentUser);
+            return Promise.all([
+              fetch(API_NODE + '/api/classrooms').then(function (r) {
+                return r.json().catch(function () {
+                  return {};
+                });
+              }),
+              fetch(API_NODE + '/api/student/classrooms?username=' + u).then(function (r) {
+                return r.json().catch(function () {
+                  return {};
+                });
+              })
+            ])
+              .then(function (pair) {
+                var a = pair[0];
+                var b = pair[1];
+                if (a && a.ok) state.studentClassroomAll = a.list || [];
+                else state.studentClassroomErr = (a && a.message) || '加载班级列表失败';
+                if (b && b.ok) state.studentClassroomMy = b.list || [];
+                else if (!state.studentClassroomErr) state.studentClassroomErr = (b && b.message) || '加载我的班级失败';
+              })
+              .catch(function () {
+                state.studentClassroomErr = '无法连接 ' + API_NODE;
+              })
+              .finally(function () {
+                state.studentClassroomLoading = false;
+                render();
+              });
+          }
+          if (
+            state.studentClassroomAll === null &&
+            state.studentClassroomMy === null &&
+            !state.studentClassroomLoading
+          ) {
+            loadStudentClassrooms();
+          }
+          var myIds = {};
+          (state.studentClassroomMy || []).forEach(function (x) {
+            if (x && x.id) myIds[x.id] = true;
+          });
+          root.innerHTML =
+            studentTopNavHtml() +
+            '<div class="header"><h1>班级 · 入班与打卡</h1><div class="header-right"><button type="button" data-action="backCRStu">返回题库</button></div></div>' +
+            (state.studentClassroomLoading
+              ? '<div class="card"><p>加载中…</p></div>'
+              : '') +
+            (state.studentClassroomErr
+              ? '<div class="card" style="border-color:var(--wrong)"><p style="color:var(--wrong)">' +
+                escapeHtml(state.studentClassroomErr) +
+                '</p><button type="button" class="primary" data-action="retryCrStu">重试</button></div>'
+              : '') +
+            '<div class="card"><h2>全部班级</h2><p style="color:var(--muted);font-size:0.9rem">搜索并加入你的班级；入班后可提交当日录音打卡（评测与「上传录音」相同，校区服务器可能对每人每日次数设限以控制成本）。</p>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;margin-top:0.5rem"><thead><tr><th style="text-align:left;padding:0.35rem">班级</th><th style="text-align:left;padding:0.35rem">教师</th><th style="padding:0.35rem"></th></tr></thead><tbody>' +
+            (Array.isArray(state.studentClassroomAll)
+              ? state.studentClassroomAll
+                  .map(function (c) {
+                    var joined = myIds[c.id];
+                    return (
+                      '<tr><td style="padding:0.35rem;border-top:1px solid var(--border)">' +
+                      escapeHtml(c.name || '') +
+                      '</td><td style="padding:0.35rem;border-top:1px solid var(--border);color:var(--muted)">' +
+                      escapeHtml(c.teacher_username || '') +
+                      '</td><td style="padding:0.35rem;border-top:1px solid var(--border)">' +
+                      (joined
+                        ? '<span style="color:var(--muted)">已加入</span>'
+                        : '<button type="button" class="primary" data-join-class="' +
+                          escapeHtml(c.id) +
+                          '">加入</button>') +
+                      '</td></tr>'
+                    );
+                  })
+                  .join('')
+              : '') +
+            '</tbody></table></div>' +
+            '<div class="card"><h2>我的班级 · 上传打卡</h2>' +
+            '<label for="crCheckinClass">选择班级</label>' +
+            '<select id="crCheckinClass" style="margin-top:0.35rem;width:100%;max-width:28rem;padding:0.5rem">' +
+            '<option value="">请选择已加入的班级</option>' +
+            (Array.isArray(state.studentClassroomMy)
+              ? state.studentClassroomMy
+                  .map(function (c) {
+                    return (
+                      '<option value="' +
+                      escapeHtml(c.id) +
+                      '">' +
+                      escapeHtml(c.name || c.id) +
+                      '</option>'
+                    );
+                  })
+                  .join('')
+              : '') +
+            '</select>' +
+            '<label for="crCheckinNote" style="margin-top:0.75rem;display:block">备注（可选）</label>' +
+            '<input type="text" id="crCheckinNote" class="fill-input" style="max-width:100%" placeholder="今日主题等" maxlength="500">' +
+            '<label for="crCheckinFile" style="margin-top:0.75rem;display:block">录音文件</label>' +
+            '<input type="file" id="crCheckinFile" accept="audio/*" style="margin-top:0.35rem">' +
+            '<button type="button" class="primary" style="margin-top:0.75rem" id="btnCrCheckin" ' +
+            (state.studentClassroomCheckinBusy ? 'disabled' : '') +
+            '>提交打卡</button>' +
+            '<p id="crCheckinMsg" style="margin-top:0.75rem;color:var(--muted);font-size:0.9rem;white-space:pre-wrap">' +
+            escapeHtml(state.studentClassroomCheckinMsg || '') +
+            '</p></div>';
+          bindStudentTopNav(root);
+          root.querySelector('[data-action=backCRStu]').onclick = function () {
+            state.mainChoice = 'studentBankPick';
+            state.studentNav = 'bank';
+            render();
+          };
+          var retry = root.querySelector('[data-action=retryCrStu]');
+          if (retry) {
+            retry.onclick = function () {
+              state.studentClassroomAll = null;
+              state.studentClassroomMy = null;
+              render();
+            };
+          }
+          root.querySelectorAll('[data-join-class]').forEach(function (btn) {
+            btn.onclick = function () {
+              var cid = btn.getAttribute('data-join-class');
+              if (!cid) return;
+              fetch(API_NODE + '/api/student/classrooms/join', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ studentUsername: currentUser, classroomId: cid })
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  if (data && data.ok) {
+                    state.studentClassroomAll = null;
+                    state.studentClassroomMy = null;
+                    state.studentClassroomCheckinMsg = '已申请入班';
+                    render();
+                  } else {
+                    alert((data && data.message) || '入班失败');
+                  }
+                })
+                .catch(function () {
+                  alert('无法连接后端');
+                });
+            };
+          });
+          var btnCh = document.getElementById('btnCrCheckin');
+          if (btnCh && !state.studentClassroomCheckinBusy) {
+            btnCh.onclick = function () {
+              var sel = document.getElementById('crCheckinClass');
+              var fid = document.getElementById('crCheckinFile');
+              var noteEl = document.getElementById('crCheckinNote');
+              var classroomId = sel && sel.value ? sel.value.trim() : '';
+              var note = noteEl && noteEl.value ? noteEl.value.trim().slice(0, 500) : '';
+              var file = fid && fid.files && fid.files[0];
+              if (!classroomId) {
+                alert('请选择班级');
+                return;
+              }
+              if (!file) {
+                alert('请选择录音文件');
+                return;
+              }
+              state.studentClassroomCheckinBusy = true;
+              state.studentClassroomCheckinMsg = '正在上传并评测…';
+              render();
+              var qs = new URLSearchParams({
+                username: currentUser,
+                classroomId: classroomId,
+                note: note
+              });
+              file
+                .arrayBuffer()
+                .then(function (buf) {
+                  var ct = file.type && file.type.indexOf('audio') === 0 ? file.type : 'audio/webm';
+                  return fetch(API_NODE + '/api/student/classroom-checkin?' + qs.toString(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': ct },
+                    body: buf
+                  });
+                })
+                .then(function (r) {
+                  return r.json().catch(function () {
+                    return {};
+                  });
+                })
+                .then(function (data) {
+                  state.studentClassroomCheckinBusy = false;
+                  if (data && data.ok) {
+                    state.studentClassroomCheckinMsg =
+                      '打卡成功。时间：' + (data.submittedAt || '') + '\n可请教师在「班级 · 创建与打卡记录」中查看并写反馈。';
+                  } else {
+                    state.studentClassroomCheckinMsg = (data && data.message) || '提交失败';
+                  }
+                  render();
+                })
+                .catch(function () {
+                  state.studentClassroomCheckinBusy = false;
+                  state.studentClassroomCheckinMsg = '无法连接服务端';
+                  render();
+                });
+            };
+          }
+          return;
+        }
+
         // 学生端 · 已登录：题库 → LNR / Interview / 上传录音批改
         if (PORTAL === 'student' && state.mainChoice === 'studentBankPick' && currentUser) {
           root.innerHTML =
@@ -1927,6 +2150,11 @@
             '<div class="card" data-action="stuPickUpload">' +
             '<h2>上传录音批改</h2>' +
             '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">自选音频：<strong>录音文件识别</strong>（长段）+ <strong>TokenHub</strong> 批改</p>' +
+            '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
+            '</div>' +
+            '<div class="card" data-action="stuPickClassroom">' +
+            '<h2>班级 · 入班与打卡</h2>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">查看全部班级、加入本班、上传每日录音打卡；教师可集中查看与写反馈（消耗与「上传」相同 Token/ASR）</p>' +
             '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
             '</div>' +
             '</div>';
@@ -1957,6 +2185,14 @@
             state.realTestLoading = false;
             state.realTestError = '';
             state.realTestResult = null;
+            render();
+          };
+          root.querySelector('[data-action=stuPickClassroom]').onclick = function () {
+            state.mainChoice = 'studentClassrooms';
+            state.studentClassroomAll = null;
+            state.studentClassroomMy = null;
+            state.studentClassroomErr = '';
+            state.studentClassroomCheckinMsg = '';
             render();
           };
           return;
@@ -2407,6 +2643,11 @@
                 <h2>今日作业提交</h2>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
+              <div class="card" data-action="main" data-choice="teacherClassrooms">
+                <h2>班级 · 创建与打卡记录</h2>
+                <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">创建班级、学生搜索入班；查看本班录音打卡与写反馈（与上传批改同源评测）</p>
+                <button class="primary" style="margin-top:0.5rem">进入</button>
+              </div>
               <div class="card" data-action="main" data-choice="upload">
                 <h2>上传录音批改</h2>
                 <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">试测：与学生活页相同，<strong>录音文件 ASR + TokenHub</strong>（<code>/api/upload-audio-correct</code>）</p>
@@ -2442,6 +2683,14 @@
                 state.teacherLRNums = state.teacherLRNums || '';
                 state.teacherAssignTitle = state.teacherAssignTitle || '';
                 state.teacherAssignStudents = state.teacherAssignStudents || '';
+              }
+              if (state.mainChoice === 'teacherClassrooms') {
+                state.teacherClassroomList = null;
+                state.teacherClassroomLoading = false;
+                state.teacherClassroomErr = '';
+                state.teacherClassroomDetailId = null;
+                state.teacherClassroomCheckins = null;
+                state.teacherClassroomCheckinsLoading = false;
               }
               render();
             };
@@ -2935,6 +3184,312 @@
                 });
             };
           }
+          return;
+        }
+
+        // ---------- 教师：班级创建与打卡记录 ----------
+        if (state.mainChoice === 'teacherClassrooms' && PORTAL === 'teacher' && currentUser) {
+          if (state.teacherClassroomDetailId && state.teacherClassroomCheckins === null) {
+            if (!state.teacherClassroomCheckinsLoading) {
+              state.teacherClassroomCheckinsLoading = true;
+              fetch(
+                API_NODE +
+                  '/api/teacher/classrooms/' +
+                  encodeURIComponent(state.teacherClassroomDetailId) +
+                  '/checkins?username=' +
+                  encodeURIComponent(currentUser)
+              )
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  if (data && data.ok) state.teacherClassroomCheckins = data;
+                  else state.teacherClassroomCheckins = { ok: false, message: (data && data.message) || '加载失败' };
+                })
+                .catch(function () {
+                  state.teacherClassroomCheckins = { ok: false, message: '网络错误' };
+                })
+                .finally(function () {
+                  state.teacherClassroomCheckinsLoading = false;
+                  render();
+                });
+            }
+            root.innerHTML =
+              '<div class="header"><h1>班级打卡</h1><div class="header-right"><button type="button" data-action="backCrLoad">返回</button> ' +
+              headerRight() +
+              '</div></div><div class="card"><p>加载打卡记录中…</p></div>';
+            root.querySelector('[data-action=backCrLoad]').onclick = function () {
+              state.teacherClassroomDetailId = null;
+              state.teacherClassroomCheckins = null;
+              render();
+            };
+            var louL = root.querySelector('[data-action=logout]');
+            if (louL) {
+              louL.onclick = function () {
+                clearCurrentUser();
+                state.mainChoice = null;
+                state.view = 'list';
+                state.teacherClassroomDetailId = null;
+                state.teacherClassroomCheckins = null;
+                render();
+              };
+            }
+            return;
+          }
+
+          if (state.teacherClassroomList === null && !state.teacherClassroomLoading) {
+            state.teacherClassroomLoading = true;
+            state.teacherClassroomErr = '';
+            fetch(API_NODE + '/api/teacher/classrooms?username=' + encodeURIComponent(currentUser))
+              .then(function (r) {
+                return r.json();
+              })
+              .then(function (data) {
+                if (data && data.ok) state.teacherClassroomList = data.list || [];
+                else {
+                  state.teacherClassroomList = [];
+                  state.teacherClassroomErr = (data && data.message) || '加载失败';
+                }
+              })
+              .catch(function () {
+                state.teacherClassroomList = [];
+                state.teacherClassroomErr = '无法连接 ' + API_NODE;
+              })
+              .finally(function () {
+                state.teacherClassroomLoading = false;
+                render();
+              });
+          }
+
+          if (state.teacherClassroomDetailId && state.teacherClassroomCheckins && state.teacherClassroomCheckins.ok) {
+            var tc = state.teacherClassroomCheckins;
+            var rows = Array.isArray(tc.checkins) ? tc.checkins : [];
+            root.innerHTML =
+              '<div class="header"><h1>班级打卡 · ' +
+              escapeHtml((tc.classroom && tc.classroom.name) || '') +
+              '</h1><div class="header-right"><button type="button" data-action="backCrDetail">返回班级列表</button> ' +
+              headerRight() +
+              '</div></div>' +
+              (rows
+                    .map(function (row, idx) {
+                      var ed = row.eval_data || {};
+                      var tr = (ed.transcript || '').slice(0, 400);
+                      var fb = row.teacher_feedback || '';
+                      return (
+                        '<div class="card" data-checkin-row="' +
+                        idx +
+                        '"><p style="color:var(--muted);font-size:0.85rem">' +
+                        escapeHtml(String(row.submitted_at || '')) +
+                        ' · ' +
+                        escapeHtml(row.student_username || '') +
+                        '</p>' +
+                        (row.note
+                          ? '<p style="font-size:0.9rem;margin-top:0.35rem">备注：' + escapeHtml(row.note) + '</p>'
+                          : '') +
+                        '<p style="margin-top:0.5rem;font-size:0.95rem;white-space:pre-wrap">' +
+                        escapeHtml(tr) +
+                        '</p>' +
+                        '<label style="display:block;margin-top:0.75rem">教师反馈</label>' +
+                        '<textarea class="fill-input" rows="2" style="max-width:100%;margin-top:0.35rem" data-feedback-ta="' +
+                        escapeHtml(row.id) +
+                        '">' +
+                        escapeHtml(fb) +
+                        '</textarea>' +
+                        '<button type="button" class="primary" style="margin-top:0.5rem" data-save-feedback="' +
+                        escapeHtml(row.id) +
+                        '">保存反馈</button></div>'
+                      );
+                    })
+                    .join('') ||
+                '<div class="card"><p style="color:var(--muted)">暂无打卡记录</p></div>');
+            root.querySelector('[data-action=backCrDetail]').onclick = function () {
+              state.teacherClassroomDetailId = null;
+              state.teacherClassroomCheckins = null;
+              render();
+            };
+            root.querySelector('[data-action=logout]').onclick = function () {
+              clearCurrentUser();
+              state.mainChoice = null;
+              state.view = 'list';
+              state.teacherClassroomDetailId = null;
+              state.teacherClassroomCheckins = null;
+              render();
+            };
+            root.querySelectorAll('[data-save-feedback]').forEach(function (b) {
+              b.onclick = function () {
+                var id = b.getAttribute('data-save-feedback');
+                var card = b.closest ? b.closest('.card') : null;
+                var ta = card ? card.querySelector('textarea') : null;
+                var text = ta ? ta.value : '';
+                fetch(API_NODE + '/api/teacher/classroom-checkin-feedback', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    teacherUsername: currentUser,
+                    checkinId: id,
+                    feedback: text
+                  })
+                })
+                  .then(function (r) {
+                    return r.json();
+                  })
+                  .then(function (data) {
+                    if (data && data.ok) alert('已保存');
+                    else alert((data && data.message) || '保存失败');
+                  })
+                  .catch(function () {
+                    alert('无法连接后端');
+                  });
+              };
+            });
+            return;
+          }
+
+          if (state.teacherClassroomDetailId && state.teacherClassroomCheckins && !state.teacherClassroomCheckins.ok) {
+            root.innerHTML =
+              '<div class="header"><h1>班级打卡</h1><div class="header-right"><button type="button" data-action="backCrDetail2">返回</button> ' +
+              headerRight() +
+              '</div></div><div class="card" style="border-color:var(--wrong)"><p style="color:var(--wrong)">' +
+              escapeHtml(state.teacherClassroomCheckins.message || '加载失败') +
+              '</p></div>';
+            root.querySelector('[data-action=backCrDetail2]').onclick = function () {
+              state.teacherClassroomDetailId = null;
+              state.teacherClassroomCheckins = null;
+              render();
+            };
+            root.querySelector('[data-action=logout]').onclick = function () {
+              clearCurrentUser();
+              state.mainChoice = null;
+              state.view = 'list';
+              render();
+            };
+            return;
+          }
+
+          var tcl = state.teacherClassroomList;
+          root.innerHTML =
+            '<div class="header"><h1>班级 · 创建与打卡</h1><div class="header-right"><button type="button" data-action="backCrTeach">返回</button> ' +
+            headerRight() +
+            '</div></div>' +
+            '<div class="card"><h2>新建班级</h2>' +
+            '<label for="crNewName">班级名称</label>' +
+            '<input type="text" id="crNewName" class="fill-input" style="margin-top:0.35rem;max-width:100%" placeholder="例如：周六早读 A 班" maxlength="80">' +
+            '<label for="crNewDesc" style="margin-top:0.75rem;display:block">说明（可选）</label>' +
+            '<input type="text" id="crNewDesc" class="fill-input" style="max-width:100%" placeholder="学生端可见" maxlength="500">' +
+            '<button type="button" class="primary" style="margin-top:0.75rem" id="btnCrCreate">创建</button>' +
+            '<p id="crCreateMsg" style="margin-top:0.5rem;font-size:0.9rem;color:var(--muted)"></p></div>' +
+            (state.teacherClassroomLoading ? '<div class="card"><p>加载中…</p></div>' : '') +
+            (state.teacherClassroomErr
+              ? '<div class="card" style="border-color:var(--wrong)"><p style="color:var(--wrong)">' +
+                escapeHtml(state.teacherClassroomErr) +
+                '</p></div>'
+              : '') +
+            '<div class="card"><h2>我的班级</h2>' +
+            (Array.isArray(tcl) && tcl.length
+              ? tcl
+                  .map(function (c) {
+                    return (
+                      '<div style="padding:0.75rem 0;border-top:1px solid var(--border)"><strong>' +
+                      escapeHtml(c.name || '') +
+                      '</strong>' +
+                      (c.description
+                        ? '<p style="color:var(--muted);font-size:0.9rem;margin:0.25rem 0 0">' +
+                          escapeHtml(c.description) +
+                          '</p>'
+                        : '') +
+                      '<button type="button" class="primary" style="margin-top:0.5rem" data-open-checkins="' +
+                      escapeHtml(c.id) +
+                      '">查看打卡记录</button> ' +
+                      '<button type="button" data-del-class="' +
+                      escapeHtml(c.id) +
+                      '" style="margin-left:0.5rem">删除</button></div>'
+                    );
+                  })
+                  .join('')
+              : '<p style="color:var(--muted)">暂无班级，请在上方创建。</p>') +
+            '</div>';
+
+          root.querySelector('[data-action=backCrTeach]').onclick = function () {
+            state.mainChoice = null;
+            state.teacherClassroomList = null;
+            render();
+          };
+          root.querySelector('[data-action=logout]').onclick = function () {
+            clearCurrentUser();
+            state.mainChoice = null;
+            state.view = 'list';
+            state.teacherClassroomList = null;
+            render();
+          };
+          var btnCreate = document.getElementById('btnCrCreate');
+          if (btnCreate) {
+            btnCreate.onclick = function () {
+              var n = (document.getElementById('crNewName') && document.getElementById('crNewName').value) || '';
+              var d = (document.getElementById('crNewDesc') && document.getElementById('crNewDesc').value) || '';
+              n = n.trim();
+              if (!n) {
+                alert('请填写班级名称');
+                return;
+              }
+              fetch(API_NODE + '/api/teacher/classrooms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  teacherUsername: currentUser,
+                  name: n,
+                  description: d.trim() || null
+                })
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  var el = document.getElementById('crCreateMsg');
+                  if (data && data.ok) {
+                    if (el) el.textContent = '已创建';
+                    state.teacherClassroomList = null;
+                    render();
+                  } else {
+                    if (el) el.textContent = (data && data.message) || '创建失败';
+                  }
+                })
+                .catch(function () {
+                  var el = document.getElementById('crCreateMsg');
+                  if (el) el.textContent = '无法连接后端';
+                });
+            };
+          }
+          root.querySelectorAll('[data-open-checkins]').forEach(function (b) {
+            b.onclick = function () {
+              state.teacherClassroomDetailId = b.getAttribute('data-open-checkins');
+              state.teacherClassroomCheckins = null;
+              render();
+            };
+          });
+          root.querySelectorAll('[data-del-class]').forEach(function (b) {
+            b.onclick = function () {
+              var id = b.getAttribute('data-del-class');
+              if (!id || !confirm('确定删除该班级？打卡记录也会删除。')) return;
+              fetch(
+                API_NODE + '/api/teacher/classrooms/' + encodeURIComponent(id) + '?username=' + encodeURIComponent(currentUser),
+                { method: 'DELETE' }
+              )
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  if (data && data.ok) {
+                    state.teacherClassroomList = null;
+                    render();
+                  } else {
+                    alert((data && data.message) || '删除失败');
+                  }
+                })
+                .catch(function () {
+                  alert('无法连接后端');
+                });
+            };
+          });
           return;
         }
 
