@@ -2584,6 +2584,11 @@
           root.innerHTML = `
             <div class="header"><h1>口语练习 · ${portalLabel}</h1><div class="header-right">${headerRight()}</div></div>
             <div class="main-choice">
+              <div class="card" data-action="hubTeacherDesk" style="border-color:var(--accent)">
+                <h2>教师工作台</h2>
+                <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">布置 Interview 作业、<strong>创建班级</strong>、查看打卡与反馈、Listen&amp;Repeat 组号、上传试测等</p>
+                <button type="button" class="primary" style="margin-top:0.5rem">进入工作台</button>
+              </div>
               <div class="card" data-action="hubPick" data-hub="interview">
                 <h2>Interview</h2>
                 <button type="button" class="primary" style="margin-top:0.5rem">进入 Interview</button>
@@ -2594,6 +2599,15 @@
               </div>
             </div>
           `;
+          var desk = root.querySelector('[data-action=hubTeacherDesk]');
+          if (desk) {
+            desk.onclick = function () {
+              state.view = 'list';
+              state.mainChoice = null;
+              persistSpeakingView('list');
+              render();
+            };
+          }
           root.querySelectorAll('[data-action=hubPick]').forEach(function (card) {
             card.onclick = function () {
               var h = card.getAttribute('data-hub');
@@ -2718,8 +2732,16 @@
             state.studentNav = 'home';
           }
           var stNav = studentTopNavHtml();
+          var classCardHtml = currentUser
+            ? '<div class="card" style="margin-bottom:1rem;border-color:var(--accent)">' +
+              '<h2 style="margin-top:0">班级 · 入班与打卡</h2>' +
+              '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">加入老师创建的班级，提交每日录音打卡（也可从顶栏「题库」进入同一入口）。</p>' +
+              '<button type="button" class="primary" style="margin-top:0.75rem" data-action="studentHomeClassroom">进入班级</button>' +
+              '</div>'
+            : '';
           root.innerHTML =
             stNav +
+            classCardHtml +
             '<div class="card">' +
             '<div class="student-home-brand"><img class="student-home-logo" src="' +
             assetUrl('fei-studio-brand.png') +
@@ -2729,6 +2751,18 @@
             '" alt="" /></div>' +
             '</div>';
           bindStudentTopNav(root);
+          var btnHc = root.querySelector('[data-action=studentHomeClassroom]');
+          if (btnHc) {
+            btnHc.onclick = function () {
+              state.mainChoice = 'studentClassrooms';
+              state.studentNav = 'bank';
+              state.studentClassroomAll = null;
+              state.studentClassroomMy = null;
+              state.studentClassroomErr = '';
+              state.studentClassroomCheckinMsg = '';
+              render();
+            };
+          }
           return;
         }
 
