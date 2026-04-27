@@ -691,7 +691,7 @@
         studentClassroomErr: '',
         studentClassroomCheckinBusy: false,
         studentClassroomCheckinMsg: '',
-        /** 学生最近一次班级打卡的完整 eval（即 TokenHub 结果） */
+        /** 班级打卡最近一次提交返回的 eval_data（含 TokenHub），用于本页展示 */
         studentClassroomLastEval: null
       };
       let recognition = null;
@@ -1193,9 +1193,6 @@
           sessionStorage.removeItem(INTERVIEW_APPROVAL_KEY);
           sessionStorage.removeItem(SPEAKING_SESSION_PWD_KEY);
         } catch (_) {}
-        try {
-          state.studentClassroomLastEval = null;
-        } catch (_) {}
       }
       function getStudentTaskName() {
         try {
@@ -1508,20 +1505,21 @@
         return '<div class="transcript-box" style="margin-top:0.35rem">' + escapeHtml(model || '（暂无修改后）') + '</div>';
       }
 
-      /** 班级打卡 eval_data：与「上传录音批改」相同结构（ASR + TokenHub） */
-      function classroomCheckinEvalHtml(ev) {
-        if (!ev || typeof ev !== 'object') return '';
+      /** 与「上传录音 / Interview 评测结果」一致：ASR（无标点）+ TokenHub 中文反馈 + 修改后英文 */
+      function tokenHubEvalBlockHtml(ev) {
+        if (!ev || typeof ev !== 'object') {
+          return '<p style="color:var(--muted);font-size:0.9rem">（无评测快照）</p>';
+        }
         return (
-          '<div style="margin-top:0.5rem;padding-top:0.75rem;border-top:1px solid var(--border)">' +
-          '<p style="font-size:0.85rem;font-weight:600;margin:0 0 0.5rem">系统批改（TokenHub，与学生端提交后一致）</p>' +
-          '<p style="color:var(--muted);font-size:0.8rem;margin:0">口语 / 转写</p>' +
+          '<div class="tokenhub-eval-block">' +
+          '<p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.35rem">口述转写（无标点，与批改页一致）</p>' +
           studentTranscriptHtml(ev) +
-          '<p style="color:var(--muted);font-size:0.8rem;margin-top:0.75rem">修改后参考</p>' +
-          modelAnswerHtml(ev) +
-          '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.75rem;white-space:pre-wrap">' +
-          escapeHtml(buildSpeakingFeedback(ev) || '') +
+          '<p style="font-size:0.8rem;color:var(--muted);margin:0.65rem 0 0.35rem">TokenHub 中文反馈 / 语法要点</p>' +
+          '<p style="color:var(--muted);font-size:0.9rem;white-space:pre-wrap;margin:0">' +
+          escapeHtml(buildSpeakingFeedback(ev) || '（暂无）') +
           '</p>' +
-          debugApiResponseHtml(ev) +
+          '<p style="font-size:0.8rem;color:var(--muted);margin:0.65rem 0 0.35rem">修改后英文</p>' +
+          modelAnswerHtml(ev) +
           '</div>'
         );
       }
@@ -2052,15 +2050,20 @@
             '>提交打卡</button>' +
             '<p id="crCheckinMsg" style="margin-top:0.75rem;color:var(--muted);font-size:0.9rem;white-space:pre-wrap">' +
             escapeHtml(state.studentClassroomCheckinMsg || '') +
-            '</p>' +
+            '</p></div>' +
             (state.studentClassroomLastEval
-              ? '<div style="margin-top:1rem">' + classroomCheckinEvalHtml(state.studentClassroomLastEval) + '</div>'
-              : '') +
-            '</div>';
+              ? '<div class="card" style="margin-top:1rem;border-color:var(--accent)">' +
+                '<h2 style="margin-top:0">本次 TokenHub 批改</h2>' +
+                '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 0.75rem">提交后立即显示（与「上传录音批改」同源：ASR + TokenHub）。</p>' +
+                tokenHubEvalBlockHtml(state.studentClassroomLastEval) +
+                debugApiResponseHtml(state.studentClassroomLastEval) +
+                '</div>'
+              : '');
           bindStudentTopNav(root);
           root.querySelector('[data-action=backCRStu]').onclick = function () {
             state.mainChoice = 'studentBankPick';
             state.studentNav = 'bank';
+            state.studentClassroomLastEval = null;
             render();
           };
           var retry = root.querySelector('[data-action=retryCrStu]');
@@ -2117,7 +2120,6 @@
               }
               state.studentClassroomCheckinBusy = true;
               state.studentClassroomCheckinMsg = '正在上传并评测…';
-              state.studentClassroomLastEval = null;
               render();
               var qs = new URLSearchParams({
                 username: currentUser,
@@ -2142,22 +2144,19 @@
                 .then(function (data) {
                   state.studentClassroomCheckinBusy = false;
                   if (data && data.ok) {
-                    state.studentClassroomLastEval =
-                      data.evalData && typeof data.evalData === 'object' ? data.evalData : null;
-                    state.studentClassroomCheckinMsg = state.studentClassroomLastEval
-                      ? '打卡已提交。下方为系统批改（TokenHub），与「上传录音批改」页一致。教师端可查看同一份记录；可在备注栏记录站外沟通要点。' +
-                        (data.submittedAt ? '\n提交时间：' + data.submittedAt : '')
-                      : '打卡已记录，但本次未返回详细批改。时间：' + (data.submittedAt || '') + '。';
+                    state.studentClassroomLastEval = data.evalData && typeof data.evalData === 'object' ? data.evalData : null;
+                    state.studentClassroomCheckinMsg =
+                      '提交成功 · ' +
+                      (data.submittedAt || '') +
+                      '。下方已显示 TokenHub 批改；教师端会保留同一条评测快照，站外沟通可由老师自行安排。';
                   } else {
                     state.studentClassroomCheckinMsg = (data && data.message) || '提交失败';
-                    state.studentClassroomLastEval = null;
                   }
                   render();
                 })
                 .catch(function () {
                   state.studentClassroomCheckinBusy = false;
                   state.studentClassroomCheckinMsg = '无法连接服务端';
-                  state.studentClassroomLastEval = null;
                   render();
                 });
             };
@@ -3338,18 +3337,12 @@
               '</h1><div class="header-right"><button type="button" data-action="backCrDetail">返回班级列表</button> ' +
               headerRight() +
               '</div></div>' +
+              '<div class="card" style="margin-bottom:0.75rem;border-color:var(--border)">' +
+              '<p style="margin:0;font-size:0.9rem;color:var(--muted)">以下为已保存的<strong>系统评测快照</strong>（与 TokenHub 学生端一致：转写 + 中文反馈 + 修改后英文）。面向学生的详细批改在其<strong>提交成功后立即</strong>显示；您可在微信等站外跟进，本页「站内备忘」仅供自己记录。</p>' +
+              '</div>' +
               (rows
                     .map(function (row, idx) {
                       var ed = row.eval_data || {};
-                      var trFallback = (ed.transcript || '').trim();
-                      var systemBlock = evalDataLooksComplete(ed)
-                        ? classroomCheckinEvalHtml(ed)
-                        : (trFallback
-                            ? '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">（该条无完整 TokenHub 数据，仅保留转写预览）</p>' +
-                              '<p style="margin-top:0.35rem;font-size:0.95rem;white-space:pre-wrap">' +
-                              escapeHtml(trFallback.slice(0, 2000)) +
-                              '</p>'
-                            : '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.5rem">（暂无转写/批改数据）</p>');
                       var fb = row.teacher_feedback || '';
                       return (
                         '<div class="card" data-checkin-row="' +
@@ -3362,8 +3355,10 @@
                         (row.note
                           ? '<p style="font-size:0.9rem;margin-top:0.35rem">学生备注：' + escapeHtml(row.note) + '</p>'
                           : '') +
-                        systemBlock +
-                        '<label style="display:block;margin-top:0.75rem">教师备注（可选，站外沟通要点）</label>' +
+                        '<div style="margin-top:0.65rem">' +
+                        tokenHubEvalBlockHtml(ed) +
+                        '</div>' +
+                        '<label style="display:block;margin-top:1rem;font-size:0.9rem">站内备忘（选填，可与站外微信反馈对照）</label>' +
                         '<textarea class="fill-input" rows="2" style="max-width:100%;margin-top:0.35rem" data-feedback-ta="' +
                         escapeHtml(row.id) +
                         '">' +
@@ -3371,7 +3366,7 @@
                         '</textarea>' +
                         '<button type="button" class="primary" style="margin-top:0.5rem" data-save-feedback="' +
                         escapeHtml(row.id) +
-                        '">保存备注</button></div>'
+                        '">保存备忘</button></div>'
                       );
                     })
                     .join('') ||
@@ -3408,7 +3403,7 @@
                     return r.json();
                   })
                   .then(function (data) {
-                    if (data && data.ok) alert('已保存');
+                    if (data && data.ok) alert('备忘已保存');
                     else alert((data && data.message) || '保存失败');
                   })
                   .catch(function () {
