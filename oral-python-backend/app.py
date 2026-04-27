@@ -54,6 +54,8 @@ LT_API_URL = os.environ.get("LT_API_URL", "http://localhost:8010/v2/check")
 TENCENT_ASR_SECRET_ID = os.environ.get("TENCENT_ASR_SECRET_ID", "")
 TENCENT_ASR_SECRET_KEY = os.environ.get("TENCENT_ASR_SECRET_KEY", "")
 TENCENT_ASR_REGION = os.environ.get("TENCENT_ASR_REGION", "ap-guangzhou")
+# 录音文件识别 CreateRecTask（长音频/上传文件），与 homework-miniapp-server 一致；非「一句话识别」
+ASR_ENGINE_MODEL = os.environ.get("ASR_ENGINE_MODEL", "16k_en")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
 OLLAMA_ENABLED = str(os.environ.get("OLLAMA_ENABLED", "1")).strip().lower() in ["1", "true", "yes", "on"]
@@ -104,6 +106,10 @@ def api_health():
         lke_key_configured=bool(LKE_API_KEY and LKE_API_KEY.strip()),
         lke_base_url=LKE_BASE_URL,
         openai_installed=openai_ok,
+        tencent_credential_for_file_asr=bool(
+            TENCENT_SECRET_ID and TENCENT_SECRET_KEY
+        ),
+        asr_engine_model=ASR_ENGINE_MODEL,
         soe_configured=bool(
             TENCENT_APP_ID and TENCENT_SECRET_ID and TENCENT_SECRET_KEY
         ),
@@ -837,6 +843,90 @@ def _tencent_sentence_asr_transcript(audio_bytes: bytes, voice_format: int):
         return None, "ASR 调用失败：" + str(e)[:400]
 
 
+def _extract_transcript_from_rec_result(asr_result_json: str) -> str:
+    """从录音文件识别 DescribeTaskStatus 返回的 Result JSON 中抽取合并文本。"""
+    if not asr_result_json or not asr_result_json.strip():
+        return ""
+    s = asr_result_json.strip()
+    try:
+        data = json.loads(s)
+    except json.JSONDecodeError:
+        return s
+
+    chunks: list[str] = []
+
+    def visit(obj: Any) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k in ("FinalSentence", "Text", "text") and isinstance(v, str) and v.strip():
+                    chunks.append(v.strip())
+                else:
+                    visit(v)
+        elif isinstance(obj, list):
+            for it in obj:
+                visit(it)
+
+    visit(data)
+    if chunks:
+        return " ".join(chunks)
+    if isinstance(data, dict):
+        res = data.get("result")
+        if isinstance(res, list):
+            for item in res:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    chunks.append(item["text"].strip())
+    return " ".join(chunks) if chunks else s[:8000]
+
+
+def _asr_file_recognize_long_audio(raw_bytes: bytes) -> str:
+    """
+    腾讯云「录音文件识别」CreateRecTask：适合分钟级口语、约 5MB 内音频。
+    使用 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（与智聆/控制台 API 密钥一致），非一句话识别。
+    """
+    if len(raw_bytes) > 5 * 1024 * 1024:
+        raise ValueError("音频超过 5MB，请压缩时长或降低码率后再试")
+    if not TENCENT_SECRET_ID or not TENCENT_SECRET_KEY:
+        raise RuntimeError(
+            "未配置 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（录音文件识别需要与腾讯云控制台一致的 API 密钥）"
+        )
+    from tencentcloud.common import credential
+    from tencentcloud.asr.v20190614 import asr_client, models
+
+    cred = credential.Credential(TENCENT_SECRET_ID, TENCENT_SECRET_KEY)
+    client = asr_client.AsrClient(cred, TENCENT_ASR_REGION)
+
+    req = models.CreateRecTaskRequest()
+    req.EngineModelType = ASR_ENGINE_MODEL
+    req.ChannelNum = 1
+    req.ResTextFormat = 2
+    req.SourceType = 1
+    req.Data = base64.b64encode(raw_bytes).decode("ascii")
+    req.DataLen = len(raw_bytes)
+
+    resp = client.CreateRecTask(req)
+    if not resp.Data or not resp.Data.TaskId:
+        raise RuntimeError("ASR 未返回 TaskId")
+    task_id = resp.Data.TaskId
+
+    q = models.DescribeTaskStatusRequest()
+    q.TaskId = task_id
+
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        st = client.DescribeTaskStatus(q)
+        if not st.Data:
+            time.sleep(1.0)
+            continue
+        status = st.Data.Status
+        if status == 2:
+            return _extract_transcript_from_rec_result(st.Data.Result or "")
+        if status == 3:
+            raise RuntimeError(st.Data.ErrorMsg or "ASR 任务失败")
+        time.sleep(1.0)
+
+    raise TimeoutError("ASR 识别超时")
+
+
 # ---- 腾讯云 TokenHub 批改（与 homework-miniapp-server 同源，供 standalone Interview / 上传录音）----
 
 
@@ -978,15 +1068,20 @@ def interview_correct():
 @app.route("/api/upload-audio-correct", methods=["POST", "OPTIONS"])
 def upload_audio_correct():
     """
-    无浏览器转写时：服务端腾讯云一句话 ASR + TokenHub 批改（替代原 asr-eval 的 Ollama 部分）。
+    上传整段口语：腾讯云「录音文件识别」CreateRecTask（非一句话、可至约 5MB/数分钟）
+    + TokenHub 批改。
     form: audio (file)
+    需 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（与控制台 API 密钥一致）；可选 ASR_ENGINE_MODEL=16k_en。
     """
     if request.method == "OPTIONS":
         return ("", 204)
     if not LKE_API_KEY or not LKE_API_KEY.strip():
         return jsonify(ok=False, error="未配置 LKE_API_KEY（TokenHub）"), 500
-    if not TENCENT_ASR_SECRET_ID or not TENCENT_ASR_SECRET_KEY:
-        return jsonify(ok=False, error="未配置 TENCENT_ASR_SECRET_ID / TENCENT_ASR_SECRET_KEY"), 500
+    if not TENCENT_SECRET_ID or not TENCENT_SECRET_KEY:
+        return jsonify(
+            ok=False,
+            error="未配置 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（录音文件识别 CreateRecTask 需要，与智聆所用密钥相同）",
+        ), 500
     if "audio" not in request.files:
         return jsonify(ok=False, error="缺少音频文件 audio"), 400
     audio = request.files["audio"]
@@ -1003,14 +1098,13 @@ def upload_audio_correct():
         if conv_err or not wav_b:
             return jsonify(ok=False, error="音频转码失败：" + (conv_err or "未知错误")), 400
         audio_bytes = wav_b
-        voice_format = 1
-    else:
-        voice_format = 1 if filename.endswith(".wav") else 2
-    asr_t, asr_err = _tencent_sentence_asr_transcript(audio_bytes, voice_format)
-    if asr_err or not asr_t:
-        return jsonify(
-            ok=False, error=asr_err or "ASR 未返回文本", transcript=None
-        ), 502
+    try:
+        asr_t = _asr_file_recognize_long_audio(audio_bytes)
+    except Exception as e:
+        return jsonify(ok=False, error="ASR：" + str(e)[:800], transcript=None), 502
+    asr_t = (asr_t or "").strip()
+    if not asr_t:
+        return jsonify(ok=False, error="ASR 未识别到有效文本，请检查录音或格式。"), 502
     try:
         raw = _deepseek_correct(asr_t)
         body = _tokenhub_raw_to_standalone_json(asr_t, raw)

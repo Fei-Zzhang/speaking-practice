@@ -6,10 +6,16 @@
   <title>教师端 · 口语任务</title>
   <meta http-equiv="refresh" content="0;url=standalone.html?portal=teacher" />
 </head>
-<body style="font-family:system-ui;padding:2rem;background:#f5f5f7;color:#1d1d1f;max-width:40rem;line-height:1.5">
+<body style="font-family:system-ui;padding:2rem;background:#f5f5f7;color:#1d1d1f;max-width:42rem;line-height:1.55">
   <p>正在进入教师端… 若未自动跳转，请点：<a href="standalone.html?portal=teacher">standalone.html?portal=teacher</a></p>
   <p style="color:#666;font-size:0.95rem;margin-top:1rem">
-    业务逻辑在 <strong>standalone.html</strong>。教师首页可试测 <strong>上传录音批改</strong>，与学生活页一致，依赖 Python 服务上的 <code>/api/upload-audio-correct</code>（腾讯 ASR + TokenHub，密钥配置在 Python 层）。
+    与 <code>student.html</code> 相同，实际界面与逻辑在 <strong>standalone.html</strong>。教师端试测「上传录音」与学生活页一致：Python <code>/api/upload-audio-correct</code>（录音文件识别 + TokenHub，密钥在 Python 层）。
+  </p>
+  <p style="color:#666;font-size:0.95rem;margin-top:0.75rem">
+    与后端一致：作业项 <code>items[].mode === 'listenRepeat'</code> 时，Node 将整段录音转发到 Python <strong><code>POST /api/oral-eval</code></strong>（智聆）；否则转发到 <strong><code>POST /api/upload-audio-correct</code></strong>（长音频 ASR + TokenHub，与学生活页「上传录音」同路）。<strong>不使用</strong> <code>/api/asr-eval</code>。
+  </p>
+  <p style="color:#666;font-size:0.9rem;margin-top:0.6rem">
+    教师补评无结果旧数据：<code>POST /api/teacher/evaluate-submission</code> 从 Storage 取回音频时，用同一套 <code>mode</code> 分流。学生经 Node 的 <code>interview-self-eval</code> 自主练习为 Interview 专用，仅 <code>upload-audio-correct</code>。
   </p>
 </body>
 </html>

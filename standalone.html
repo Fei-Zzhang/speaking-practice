@@ -130,6 +130,15 @@
       const API_PYTHON = 'https://speaking-practice-2-mmuf.onrender.com';
       const API_BASE = API_PYTHON;
 
+      /**
+       * 三条业务线（勿串路）— 与 oral-python-backend 一致
+       *
+       * A · LNR（Listen&Repeat）：子页 Listen&Repeat练习/index.html 仅 POST /api/oral-eval（智聆 + 腾讯云一句 ASR 辅助转写），不用 TokenHub。
+       * B · Interview 题库（本页「题目练习」）：录音结束优先 POST /api/interview-correct（Web Speech/流式已有文本 + TokenHub）；无文本才 POST /api/upload-audio-correct。不要调用 /api/asr-eval。
+       * C ·「上传录音批改」：仅 POST /api/upload-audio-correct（录音文件识别 CreateRecTask + TokenHub）。
+       * 学生经 Node 提交作业（submit-audio）：作业项 <code>mode===listenRepeat</code> 走 <code>oral-eval</code>（与 A 一致）；否则（topic/type 等 Interview 题）走 <code>upload-audio-correct</code>（与 C 一致）；仅后者需开通 Interview 云端批改。
+       */
+
       /** 与当前 HTML 同目录的资源；用 new URL 解析，避免 GitHub Pages 子路径下写死 `src="a.png"` 导致 404 */
       function assetUrl(rel) {
         try {
@@ -1917,7 +1926,7 @@
             '</div>' +
             '<div class="card" data-action="stuPickUpload">' +
             '<h2>上传录音批改</h2>' +
-            '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">自选音频：服务端腾讯云 ASR 转写 + <strong>TokenHub</strong> 批改</p>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">自选音频：<strong>录音文件识别</strong>（长段）+ <strong>TokenHub</strong> 批改</p>' +
             '<button type="button" class="primary" style="margin-top:0.5rem">进入</button>' +
             '</div>' +
             '</div>';
@@ -2400,7 +2409,7 @@
               </div>
               <div class="card" data-action="main" data-choice="upload">
                 <h2>上传录音批改</h2>
-                <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">试测：与学生活页相同，<strong>服务端 ASR + TokenHub</strong>（<code>/api/upload-audio-correct</code>）</p>
+                <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">试测：与学生活页相同，<strong>录音文件 ASR + TokenHub</strong>（<code>/api/upload-audio-correct</code>）</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
             </div>
@@ -4714,7 +4723,7 @@
             <div class="header"><h1>上传录音批改</h1><div class="header-right"><button data-action="backUpload" type="button">返回</button> ${PORTAL === 'student' ? '' : headerRight()}</div></div>
             <div class="card">
               <h2>选择本地音频</h2>
-              <p style="color:var(--muted);font-size:0.9rem;margin:0.25rem 0 0.5rem">由 Python 服务调用<strong>腾讯云一句话 ASR</strong> 转写，再经 <strong>TokenHub</strong> 批改。支持常见格式（m4a/webm/mp3 等，服务端会转码）。</p>
+              <p style="color:var(--muted);font-size:0.9rem;margin:0.25rem 0 0.5rem">由 Python 调用<strong>腾讯云录音文件识别</strong>（CreateRecTask，适合 45s 级长音频，单文件约 5MB 内），再经 <strong>TokenHub</strong> 批改。支持 m4a/webm/mp3 等，服务端可转码为 wav。</p>
               <input type="file" id="uploadAudioFile" accept="audio/*" style="margin-top:0.75rem">
               <button class="primary" id="btnUploadEval" type="button" style="margin-top:0.75rem" ${loading ? 'disabled' : ''}>开始评测</button>
             </div>

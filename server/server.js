@@ -49,6 +49,22 @@ function buildAssignmentQuestionKey(it, idx) {
   return [mode, cat, qid, i].join('|');
 }
 
+/** 与 standalone 中题目 key 规则一致：按 questionId 或 q0/q1 命中作业项，用于区分 LNR vs Interview */
+function getAssignmentItemModeFromItems(items, questionId) {
+  const itemsArr = Array.isArray(items) ? items : [];
+  const qid = String(questionId || '').trim();
+  for (let idx = 0; idx < itemsArr.length; idx++) {
+    const it = itemsArr[idx];
+    if (!it) continue;
+    const pid = it.questionId != null ? String(it.questionId).trim() : '';
+    const qk = 'q' + idx;
+    if ((pid && pid === qid) || qk === qid) {
+      return String(it.mode || '').trim() || null;
+    }
+  }
+  return null;
+}
+
 function evalDataLooksComplete(ed) {
   return (
     ed &&
@@ -124,7 +140,7 @@ async function getStudentInterviewApproval(username) {
 
 /**
  * Interview 腾讯云实时流式 ASR：教师可用；学生端凡已登录学生均可（与「实时转写」第一步一致，不计费见腾讯云文档）。
- * 云端批改（Python asr-eval）仍受 interview_grading_approved 控制。
+ * 经 Node 转发的整段录音批改已统一走 Python /api/upload-audio-correct（长音频 ASR + TokenHub，与主站「上传」同路），仍受 interview_grading_approved 控制。
  */
 async function getTencentStreamEligibility(username) {
   const uname = String(username || '').trim();
@@ -1054,7 +1070,7 @@ app.post('/api/student/submit', async (req, res) => {
   }
 });
 
-/** 学生 Interview 自主练习：经 Node 转发 Python asr-eval（需 interview_grading_approved） */
+/** 学生 Interview 自主练习：经 Node 转发 Python upload-audio-correct（与主站「上传录音」同路，勿用 asr-eval） */
 app.post('/api/student/interview-self-eval', async (req, res) => {
   try {
     const u = String(req.query.username || '').trim();
@@ -1079,7 +1095,7 @@ app.post('/api/student/interview-self-eval', async (req, res) => {
     form.append('refText', String(refText || ''));
     form.append('evalMode', '3');
 
-    const pyResp = await fetch(PYTHON_BASE_URL + '/api/asr-eval', {
+    const pyResp = await fetch(PYTHON_BASE_URL + '/api/upload-audio-correct', {
       method: 'POST',
       body: form,
     });
@@ -1123,26 +1139,42 @@ app.post('/api/student/submit-audio', express.raw({ type: 'audio/*', limit: '20m
 
     if (tErr || !t) return res.status(403).json({ ok: false, message: '无权提交该任务' });
 
-    const approval = await getStudentInterviewApproval(uname);
-    if (!approval.ok || !approval.approved) {
-      return res.status(403).json({
-        ok: false,
-        message:
-          '未开通 Interview 云端批改。请向教师申请开通，或使用浏览器内「实时语音转写」复制后在外部 AI 批改；Listen & Repeat 不受此限制。',
-      });
+    const { data: asgRow, error: asgErr } = await supabase
+      .from('assignments')
+      .select('items')
+      .eq('id', aid)
+      .maybeSingle();
+    if (asgErr || !asgRow) {
+      return res.status(404).json({ ok: false, message: '任务不存在' });
+    }
+    const itemMode = getAssignmentItemModeFromItems(asgRow.items, qid);
+    const isListenRepeat = itemMode === 'listenRepeat';
+
+    if (!isListenRepeat) {
+      const approval = await getStudentInterviewApproval(uname);
+      if (!approval.ok || !approval.approved) {
+        return res.status(403).json({
+          ok: false,
+          message:
+            '未开通 Interview 云端批改。请向教师申请开通，或使用浏览器内「实时语音转写」复制后在外部 AI 批改；Listen & Repeat 不受此限制。',
+        });
+      }
     }
 
     // 1) 立即评测并保存结果：音频不落库（只把 Python 的转写/批改结果写入 eval_data）
+    // LNR：与 Listen&Repeat 子页一致 → oral-eval（智聆 + 句级）。Interview：与主站「上传」一致 → upload-audio-correct（长音频 ASR + TokenHub）。
     const audioBytes = isRawAudio ? req.body : Buffer.from(b64, 'base64');
 
     const form = new FormData();
-    // Node 18+ 内置 Blob
     const audioBlob = new Blob([audioBytes], { type: 'audio/webm' });
     form.append('audio', audioBlob, 'student-task.webm');
     form.append('refText', rtxt || '');
-    form.append('evalMode', '3');
+    form.append('evalMode', isListenRepeat ? '1' : '3');
 
-    const pyResp = await fetch(PYTHON_BASE_URL + '/api/asr-eval', {
+    const pyUrl = isListenRepeat
+      ? `${PYTHON_BASE_URL}/api/oral-eval`
+      : `${PYTHON_BASE_URL}/api/upload-audio-correct`;
+    const pyResp = await fetch(pyUrl, {
       method: 'POST',
       body: form,
     });
@@ -1200,12 +1232,14 @@ app.post('/api/teacher/evaluate-submission', async (req, res) => {
     // 任务须存在；zhangyufei 作为指定批改账号，可批改任意教师下发的任务
     const { data: assignmentRow, error: aErr } = await supabase
       .from('assignments')
-      .select('id')
+      .select('id, items')
       .eq('id', aid)
       .maybeSingle();
     if (aErr || !assignmentRow) {
       return res.status(404).json({ ok: false, message: '任务不存在' });
     }
+    const evItemMode = getAssignmentItemModeFromItems(assignmentRow.items, qid);
+    const evIsListenRepeat = evItemMode === 'listenRepeat';
 
     const { data: subRow, error: sErr } = await supabase
       .from('student_submissions')
@@ -1265,9 +1299,12 @@ app.post('/api/teacher/evaluate-submission', async (req, res) => {
     const audioBlob = new Blob([audioBytes], { type: 'audio/webm' });
     form.append('audio', audioBlob, 'student-task.webm');
     form.append('refText', refText);
-    form.append('evalMode', '3');
+    form.append('evalMode', evIsListenRepeat ? '1' : '3');
 
-    const pyResp = await fetch(PYTHON_BASE_URL + '/api/asr-eval', {
+    const evPyUrl = evIsListenRepeat
+      ? `${PYTHON_BASE_URL}/api/oral-eval`
+      : `${PYTHON_BASE_URL}/api/upload-audio-correct`;
+    const pyResp = await fetch(evPyUrl, {
       method: 'POST',
       body: form,
     });

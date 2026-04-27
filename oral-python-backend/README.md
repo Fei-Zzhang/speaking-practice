@@ -56,9 +56,14 @@ TENCENT_ASR_REGION=ap-guangzhou
 - 请在 **`server/.env`** 配置 **`TENCENT_ASR_APP_ID`**、**`TENCENT_ASR_SECRET_ID`**、**`TENCENT_ASR_SECRET_KEY`**，可与上表 **TENCENT_ASR_SECRET_*** 复用；引擎默认 **`16k_en`**（与题目练习英文场景一致）。
 - **Listen & Repeat** 仍走本目录的 **`/api/oral-eval`**（智聆 + 可选一句话 ASR），**无需**配置 Node 侧流式签名。
 
+### `POST /api/upload-audio-correct`（standalone 上传录音）
+
+- 使用腾讯云 **录音文件识别 CreateRecTask**（与 `homework-miniapp-server` 同源逻辑），**不是**一句话识别，适合 **45s 级**长音频（单文件约 **5MB** 内）。
+- 需 **`TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY`**（控制台 API 密钥）；可选 **`ASR_ENGINE_MODEL`**（默认 `16k_en`）。转写后再调 **TokenHub** 批改（`LKE_API_KEY` 等）。
+
 ### 与本目录 `POST /api/asr-eval` 的区别
 
-- **`/api/asr-eval`**：整段录音上传后的 **一句话识别** + 本地语法批改，适合交卷后评测。
+- **`/api/asr-eval`**：仍为一小句式 **一句话识别** + 本地 Ollama（若开启），与上传批改接口不同。
 - **实时流式**：边说边出字，需 Node 签名 + 浏览器按文档推送 **PCM** 二进制帧；计费与权限以腾讯云控制台为准。
 
 ## 第三步：启动服务
