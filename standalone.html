@@ -110,6 +110,36 @@
     .material-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
     .material-tabs button { padding: 0.45rem 0.75rem; font-size: 0.88rem; }
     .material-tabs button.tab-active { background: var(--accent); color: #fff; }
+    /* 班级打卡：学生端横向批改卡片 + 日历 */
+    .classroom-cards-scroller {
+      display: flex; gap: 0.75rem; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0.5rem 0 0.75rem;
+      -webkit-overflow-scrolling: touch; margin: 0 -0.25rem; padding-left: 0.25rem; padding-right: 0.25rem;
+    }
+    .classroom-eval-card {
+      flex: 0 0 min(100%, 340px); max-width: 100%; scroll-snap-align: start;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 1rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .classroom-cal-wrap { margin-top: 0.5rem; }
+    .classroom-cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+    .classroom-cal-nav span { font-weight: 600; font-size: 0.95rem; }
+    .classroom-cal-nav button { padding: 0.35rem 0.65rem; font-size: 1rem; line-height: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+    .classroom-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; font-size: 0.8rem; text-align: center; }
+    .classroom-cal-dow { color: var(--muted); font-size: 0.72rem; padding: 0.2rem; }
+    .classroom-cal-cell { position: relative; min-height: 2.4rem; padding: 0.25rem; border-radius: 8px; border: 1px solid transparent; color: var(--muted); }
+    .classroom-cal-cell.empty { visibility: hidden; }
+    .classroom-cal-cell.is-today { border-color: var(--accent); }
+    .classroom-cal-cell.has-checkin { cursor: pointer; color: var(--text); background: rgba(99,102,241,0.08); }
+    .classroom-cal-cell.has-checkin:hover { border-color: var(--accent); }
+    .classroom-cal-cell.is-pick { box-shadow: 0 0 0 2px var(--accent); }
+    .classroom-cal-stamp { position: absolute; right: 2px; top: 0; font-size: 0.65rem; color: #c41e3a; font-weight: 800; opacity: 0.9; line-height: 1; }
+    .classroom-cal-fw { position: absolute; left: 0; right: 0; bottom: -2px; height: 12px; pointer-events: none; overflow: hidden; }
+    .classroom-cal-fw i { position: absolute; display: block; width: 4px; height: 4px; border-radius: 1px; background: #f59e0b; animation: calFw 1.1s ease-out infinite; }
+    .classroom-cal-fw i:nth-child(1) { left: 20%; animation-delay: 0s; }
+    .classroom-cal-fw i:nth-child(2) { left: 40%; background: #ec4899; animation-delay: 0.2s; }
+    .classroom-cal-fw i:nth-child(3) { left: 60%; background: #22c55e; animation-delay: 0.4s; }
+    .classroom-cal-fw i:nth-child(4) { left: 80%; background: #6366f1; animation-delay: 0.15s; }
+    @keyframes calFw { 0% { transform: translateY(0) scale(1); opacity: 0.9; } 100% { transform: translateY(-10px) scale(0.2); opacity: 0; } }
   </style>
 </head>
 <body>
@@ -691,8 +721,19 @@
         studentClassroomErr: '',
         studentClassroomCheckinBusy: false,
         studentClassroomCheckinMsg: '',
-        /** 班级打卡最近一次提交返回的 eval_data（含 TokenHub），用于本页展示 */
-        studentClassroomLastEval: null
+        /** 当前选择的班级（打卡 + 日历） */
+        studentClassroomCheckinClassId: '',
+        studentClassroomCheckinList: null,
+        studentClassroomCheckinListForClass: null,
+        studentClassroomCheckinListLoading: false,
+        /** 日历：当前展示的年月（月 0–11） */
+        studentClassroomCalY: null,
+        studentClassroomCalM: null,
+        /** 选中的日期 YYYY-MM-DD，用于展示该日批改卡片 */
+        studentClassroomCalendarPickYmd: null,
+        /** 刚提交成功时在「打卡日」显示礼花（与 Ymd 配合） */
+        studentClassroomStampYmd: null,
+        studentClassroomFireworksUntil: 0
       };
       let recognition = null;
       let timerId = null;
@@ -1505,13 +1546,18 @@
         return '<div class="transcript-box" style="margin-top:0.35rem">' + escapeHtml(model || '（暂无修改后）') + '</div>';
       }
 
-      /** 与「上传录音 / Interview 评测结果」一致：ASR（无标点）+ TokenHub 中文反馈 + 修改后英文 */
-      function tokenHubEvalBlockHtml(ev) {
+      function evalDataToEvalList(ed) {
+        if (!ed || typeof ed !== 'object') return [];
+        if (ed.multi && Array.isArray(ed.files) && ed.files.length) return ed.files;
+        return [ed];
+      }
+      /** 单段录音：教师端保留口述转写 + 完整反馈（多题时由 tokenHubEvalBlockHtml 包装） */
+      function tokenHubSingleEvalWithTranscriptHtml(ev) {
         if (!ev || typeof ev !== 'object') {
           return '<p style="color:var(--muted);font-size:0.9rem">（无评测快照）</p>';
         }
         return (
-          '<div class="tokenhub-eval-block">' +
+          '<div class="tokenhub-eval-chunk">' +
           '<p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.35rem">口述转写（无标点，与批改页一致）</p>' +
           studentTranscriptHtml(ev) +
           '<p style="font-size:0.8rem;color:var(--muted);margin:0.65rem 0 0.35rem">TokenHub 中文反馈 / 语法要点</p>' +
@@ -1523,15 +1569,277 @@
           '</div>'
         );
       }
-
-      function evalDataLooksComplete(ev) {
-        if (!ev || typeof ev !== 'object') return false;
+      /** 与「上传录音 / Interview 评测结果」一致；支持 eval_data.multi.files 多段 */
+      function tokenHubEvalBlockHtml(ed) {
+        var list = evalDataToEvalList(ed);
+        if (!list.length) {
+          return '<p style="color:var(--muted);font-size:0.9rem">（无评测快照）</p>';
+        }
+        if (list.length === 1) {
+          return '<div class="tokenhub-eval-block">' + tokenHubSingleEvalWithTranscriptHtml(list[0]) + '</div>';
+        }
         return (
-          ev.ok === true ||
-          typeof ev.overall === 'number' ||
-          !!ev.correctedTranscript ||
-          !!ev.transcript ||
-          (Array.isArray(ev.grammarItems) && ev.grammarItems.length)
+          '<div class="tokenhub-eval-block">' +
+          list
+            .map(function (ev, i) {
+              return (
+                '<div style="margin-top:' +
+                (i ? '1rem' : '0') +
+                ';padding-top:' +
+                (i ? '1rem' : '0') +
+                ';border-top:' +
+                (i ? '1px solid var(--border)' : 'none') +
+                '"><p style="font-size:0.85rem;font-weight:600;margin:0 0 0.5rem">第 ' +
+                (i + 1) +
+                ' 段录音</p>' +
+                tokenHubSingleEvalWithTranscriptHtml(ev) +
+                '</div>'
+              );
+            })
+            .join('') +
+          '</div>'
+        );
+      }
+      function dateYmdLocalFromIso(iso) {
+        if (!iso) return '';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        var y = d.getFullYear();
+        var mo = d.getMonth() + 1;
+        var day = d.getDate();
+        return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function ymdFromDateObj(d) {
+        if (!d || isNaN(d.getTime())) return '';
+        var y = d.getFullYear();
+        var mo = d.getMonth() + 1;
+        var day = d.getDate();
+        return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (day < 10 ? '0' : '') + day;
+      }
+      function buildCheckinYmdSetFromRows(list) {
+        var s = {};
+        (list || []).forEach(function (row) {
+          var y = dateYmdLocalFromIso(row && row.submitted_at);
+          if (y) s[y] = true;
+        });
+        return s;
+      }
+      function mergeEvalsForYmdFromRows(list, ymd) {
+        if (!ymd) return [];
+        var out = [];
+        (list || []).forEach(function (row) {
+          if (dateYmdLocalFromIso(row && row.submitted_at) === ymd) {
+            out = out.concat(evalDataToEvalList(row && row.eval_data));
+          }
+        });
+        return out;
+      }
+      /** 学生端卡片：不含口述转写 */
+      function classroomStudentContentEvalText(ev) {
+        if (!ev || typeof ev !== 'object') return '—';
+        var z = String(ev.feedbackZh || '').replace(/\s+/g, ' ').trim();
+        if (z) return z;
+        var fb = buildSpeakingFeedback(ev);
+        var p = String(fb || '').split(/\n\n【/);
+        if (p[0] && p[0].trim()) return p[0].trim();
+        return (fb && fb.trim()) || '—';
+      }
+      function classroomStudentGrammarText(ev) {
+        if (!ev || typeof ev !== 'object') return '（暂无）';
+        var g = Array.isArray(ev.grammarItems) ? ev.grammarItems : [];
+        if (!g.length) {
+          var fb = buildSpeakingFeedback(ev);
+          var m = fb.match(/【语法\/逻辑表意问题】\n([\s\S]+?)(?=\n\n【|$)/);
+          if (m && m[1] && m[1].trim()) return m[1].trim();
+          return '未列出具体语法项。';
+        }
+        return g
+          .slice(0, 24)
+          .map(function (it, i) {
+            var t = (it && it.reason_zh) || (it && it.suggestion) || '—';
+            var o = it && it.original ? ' 原：' + String(it.original).slice(0, 120) : '';
+            return i + 1 + '）' + t + o;
+          })
+          .join('\n');
+      }
+      function classroomStudentModelText(ev) {
+        if (!ev) return '（暂无）';
+        return String(ev.correctedTranscript || '').trim() || '（暂无）';
+      }
+      function classroomStudentEvalCardHtml(n, tot, ev) {
+        return (
+          '<div class="classroom-eval-card">' +
+          '<p style="margin:0 0 0.5rem;font-size:0.8rem;color:var(--muted)">第 ' +
+          n +
+          ' 题' +
+          (tot > 1 ? ' / 共 ' + tot + ' 题' : '') +
+          ' · 左右滑动切换</p>' +
+          '<p style="margin:0 0 0.35rem;font-size:0.8rem;font-weight:600">1. 具体内容评价</p>' +
+          '<p style="margin:0 0 0.75rem;font-size:0.9rem;white-space:pre-wrap;line-height:1.5">' +
+          escapeHtml(classroomStudentContentEvalText(ev)) +
+          '</p>' +
+          '<p style="margin:0 0 0.35rem;font-size:0.8rem;font-weight:600">2. 语法问题</p>' +
+          '<p style="margin:0 0 0.75rem;font-size:0.9rem;white-space:pre-wrap;line-height:1.5">' +
+          escapeHtml(classroomStudentGrammarText(ev)) +
+          '</p>' +
+          '<p style="margin:0 0 0.35rem;font-size:0.8rem;font-weight:600">3. 修改后范文</p>' +
+          '<p style="margin:0;font-size:0.9rem;white-space:pre-wrap;line-height:1.5">' +
+          escapeHtml(classroomStudentModelText(ev)) +
+          '</p>' +
+          '</div>'
+        );
+      }
+      function classroomStudentEvalCardsRowHtml(evals) {
+        var arr = Array.isArray(evals) ? evals : [];
+        if (!arr.length) return '<p style="color:var(--muted);font-size:0.9rem">该日暂无批改数据。</p>';
+        var t = arr.length;
+        return (
+          '<div class="classroom-cards-scroller">' +
+          arr
+            .map(function (ev, i) {
+              return classroomStudentEvalCardHtml(i + 1, t, ev);
+            })
+            .join('') +
+          '</div>'
+        );
+      }
+      function buildClassroomMonthCalendarHtml(st) {
+        var now = new Date();
+        var y = st.studentClassroomCalY;
+        var m0 = st.studentClassroomCalM;
+        if (y == null || m0 == null) {
+          y = now.getFullYear();
+          m0 = now.getMonth();
+        }
+        var todayYmd = ymdFromDateObj(now);
+        var setObj = buildCheckinYmdSetFromRows(st.studentClassroomCheckinList || []);
+        var firstDow = new Date(y, m0, 1).getDay();
+        var dim = new Date(y, m0 + 1, 0).getDate();
+        var pick = st.studentClassroomCalendarPickYmd;
+        var stampFw = st.studentClassroomStampYmd;
+        var showFw = st.studentClassroomFireworksUntil && Date.now() < st.studentClassroomFireworksUntil;
+        var cells = [];
+        var i;
+        for (i = 0; i < firstDow; i++) {
+          cells.push('<div class="classroom-cal-cell empty"></div>');
+        }
+        for (i = 1; i <= dim; i++) {
+          var mo = m0 + 1;
+          var ymd =
+            y +
+            '-' +
+            (mo < 10 ? '0' : '') +
+            mo +
+            '-' +
+            (i < 10 ? '0' : '') +
+            i;
+          var has = !!setObj[ymd];
+          var isTo = ymd === todayYmd;
+          var isPick = pick && ymd === pick;
+          var cls = 'classroom-cal-cell';
+          if (isTo) cls += ' is-today';
+          if (has) cls += ' has-checkin';
+          if (isPick) cls += ' is-pick';
+          var title = has ? 'title="当日已打卡，点击查看批改"' : '';
+          var stamp = has ? '<span class="classroom-cal-stamp" aria-hidden="true">印</span>' : '';
+          var fw =
+            showFw && stampFw && ymd === stampFw && has
+              ? '<span class="classroom-cal-fw" aria-hidden="true"><i></i><i></i><i></i><i></i></span>'
+              : '';
+          var dataPick = has ? ' data-cal-pick="' + escapeHtml(ymd) + '"' : '';
+          cells.push(
+            '<div class="' +
+              cls +
+              '"' +
+              title +
+              dataPick +
+              '><div style="font-weight:600">' +
+              i +
+              '</div>' +
+              stamp +
+              fw +
+              '</div>'
+          );
+        }
+        while (cells.length < 42) {
+          cells.push('<div class="classroom-cal-cell empty"></div>');
+        }
+        return (
+          '<div class="classroom-cal-wrap">' +
+          '<div class="classroom-cal-nav">' +
+          '<button type="button" data-cal-nav="prev" aria-label="上一月">‹</button>' +
+          '<span>' +
+          y +
+          ' 年 ' +
+          (m0 + 1) +
+          ' 月</span>' +
+          '<button type="button" data-cal-nav="next" aria-label="下一月">›</button>' +
+          '</div>' +
+          '<div class="classroom-cal-grid">' +
+          ['日', '一', '二', '三', '四', '五', '六']
+            .map(function (w) {
+              return '<div class="classroom-cal-dow">' + w + '</div>';
+            })
+            .join('') +
+          cells.join('') +
+          '</div></div>'
+        );
+      }
+      function loadStudentClassroomCheckinsForState(force) {
+        var cid = (state.studentClassroomCheckinClassId || '').trim();
+        if (!cid || !currentUser) {
+          return;
+        }
+        if (!force && state.studentClassroomCheckinListForClass === cid && state.studentClassroomCheckinList !== null) {
+          return;
+        }
+        state.studentClassroomCheckinListLoading = true;
+        render();
+        fetch(
+          API_NODE +
+            '/api/student/classroom-checkins?username=' +
+            encodeURIComponent(currentUser) +
+            '&classroomId=' +
+            encodeURIComponent(cid)
+        )
+          .then(function (r) {
+            return r.json().catch(function () {
+              return {};
+            });
+          })
+          .then(function (data) {
+            state.studentClassroomCheckinListLoading = false;
+            if (data && data.ok) {
+              state.studentClassroomCheckinList = data.list || [];
+              state.studentClassroomCheckinListForClass = cid;
+            } else {
+              state.studentClassroomCheckinList = [];
+              state.studentClassroomCheckinListForClass = cid;
+            }
+            render();
+          })
+          .catch(function () {
+            state.studentClassroomCheckinListLoading = false;
+            state.studentClassroomCheckinList = [];
+            state.studentClassroomCheckinListForClass = cid;
+            render();
+          });
+      }
+
+      function evalDataLooksComplete(ed) {
+        if (!ed || typeof ed !== 'object') return false;
+        if (ed.multi && Array.isArray(ed.files) && ed.files.length) {
+          for (var fi = 0; fi < ed.files.length; fi++) {
+            if (evalDataLooksComplete(ed.files[fi])) return true;
+          }
+          return false;
+        }
+        return (
+          ed.ok === true ||
+          typeof ed.overall === 'number' ||
+          !!ed.correctedTranscript ||
+          !!ed.transcript ||
+          (Array.isArray(ed.grammarItems) && ed.grammarItems.length)
         );
       }
       function getSubmissionForItem(subMap, item, idx) {
@@ -1946,6 +2254,11 @@
 
         // 学生端 · 班级浏览 / 入班 / 录音打卡
         if (PORTAL === 'student' && state.mainChoice === 'studentClassrooms' && currentUser) {
+          if (state.studentClassroomCalY == null || state.studentClassroomCalM == null) {
+            var tInit = new Date();
+            state.studentClassroomCalY = tInit.getFullYear();
+            state.studentClassroomCalM = tInit.getMonth();
+          }
           function loadStudentClassrooms() {
             state.studentClassroomLoading = true;
             state.studentClassroomErr = '';
@@ -1989,6 +2302,31 @@
           (state.studentClassroomMy || []).forEach(function (x) {
             if (x && x.id) myIds[x.id] = true;
           });
+          var cidCal = (state.studentClassroomCheckinClassId || '').trim();
+          var calSection = '';
+          if (cidCal) {
+            calSection = '';
+            if (state.studentClassroomCheckinListLoading) {
+              calSection += '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 0.5rem">正在同步打卡记录…</p>';
+            }
+            calSection +=
+              '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 0.75rem">标有「印」的日期为已打卡；点击该日可查看当日全部题目的批改（多题请左右滑动卡片）。今日首次提交成功时该日会有小礼花。</p>' +
+              buildClassroomMonthCalendarHtml(state);
+            if (state.studentClassroomCalendarPickYmd) {
+              var pev = mergeEvalsForYmdFromRows(state.studentClassroomCheckinList, state.studentClassroomCalendarPickYmd);
+              calSection +=
+                '<h3 style="font-size:1rem;margin:1rem 0 0.5rem">当日批改 · ' +
+                escapeHtml(state.studentClassroomCalendarPickYmd) +
+                '</h3>' +
+                classroomStudentEvalCardsRowHtml(pev);
+            } else {
+              calSection +=
+                '<p style="color:var(--muted);font-size:0.9rem;margin-top:0.75rem">点击上方日历中有「印」的日期查看该日批改。</p>';
+            }
+          } else {
+            calSection =
+              '<p style="color:var(--muted);font-size:0.9rem">选择已加入的班级后，将显示本月打卡日历与批改记录（学生端不展示口述转写，教师端保留完整评测）。</p>';
+          }
           root.innerHTML =
             studentTopNavHtml() +
             '<div class="header"><h1>班级 · 入班与打卡</h1><div class="header-right"><button type="button" data-action="backCRStu">返回题库</button></div></div>' +
@@ -2030,10 +2368,13 @@
             (Array.isArray(state.studentClassroomMy)
               ? state.studentClassroomMy
                   .map(function (c) {
+                    var selAttr = state.studentClassroomCheckinClassId === c.id ? ' selected' : '';
                     return (
                       '<option value="' +
                       escapeHtml(c.id) +
-                      '">' +
+                      '"' +
+                      selAttr +
+                      '>' +
                       escapeHtml(c.name || c.id) +
                       '</option>'
                     );
@@ -2043,27 +2384,34 @@
             '</select>' +
             '<label for="crCheckinNote" style="margin-top:0.75rem;display:block">备注（可选）</label>' +
             '<input type="text" id="crCheckinNote" class="fill-input" style="max-width:100%" placeholder="今日主题等" maxlength="500">' +
-            '<label for="crCheckinFile" style="margin-top:0.75rem;display:block">录音文件</label>' +
-            '<input type="file" id="crCheckinFile" accept="audio/*" style="margin-top:0.35rem">' +
+            '<label for="crCheckinFile" style="margin-top:0.75rem;display:block">录音文件（可多选）</label>' +
+            '<input type="file" id="crCheckinFile" accept="audio/*" multiple style="margin-top:0.35rem">' +
             '<button type="button" class="primary" style="margin-top:0.75rem" id="btnCrCheckin" ' +
             (state.studentClassroomCheckinBusy ? 'disabled' : '') +
             '>提交打卡</button>' +
             '<p id="crCheckinMsg" style="margin-top:0.75rem;color:var(--muted);font-size:0.9rem;white-space:pre-wrap">' +
             escapeHtml(state.studentClassroomCheckinMsg || '') +
             '</p></div>' +
-            (state.studentClassroomLastEval
-              ? '<div class="card" style="margin-top:1rem;border-color:var(--accent)">' +
-                '<h2 style="margin-top:0">本次 TokenHub 批改</h2>' +
-                '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 0.75rem">提交后立即显示（与「上传录音批改」同源：ASR + TokenHub）。</p>' +
-                tokenHubEvalBlockHtml(state.studentClassroomLastEval) +
-                debugApiResponseHtml(state.studentClassroomLastEval) +
-                '</div>'
-              : '');
+            '<div class="card" style="margin-top:1rem;border-color:var(--border)">' +
+            '<h2 style="margin-top:0">今日打卡记录</h2>' +
+            calSection +
+            '</div>';
+          var cidAuto = (state.studentClassroomCheckinClassId || '').trim();
+          if (cidAuto && !state.studentClassroomCheckinListLoading) {
+            if (state.studentClassroomCheckinListForClass !== cidAuto || state.studentClassroomCheckinList === null) {
+              loadStudentClassroomCheckinsForState();
+            }
+          }
           bindStudentTopNav(root);
           root.querySelector('[data-action=backCRStu]').onclick = function () {
             state.mainChoice = 'studentBankPick';
             state.studentNav = 'bank';
-            state.studentClassroomLastEval = null;
+            state.studentClassroomCheckinClassId = '';
+            state.studentClassroomCheckinList = null;
+            state.studentClassroomCheckinListForClass = null;
+            state.studentClassroomCalendarPickYmd = null;
+            state.studentClassroomStampYmd = null;
+            state.studentClassroomFireworksUntil = 0;
             render();
           };
           var retry = root.querySelector('[data-action=retryCrStu]');
@@ -2101,6 +2449,57 @@
                 });
             };
           });
+          var selCr = document.getElementById('crCheckinClass');
+          if (selCr) {
+            selCr.onchange = function () {
+              var v = (this.value || '').trim();
+              state.studentClassroomCheckinClassId = v;
+              state.studentClassroomCheckinList = null;
+              state.studentClassroomCheckinListForClass = null;
+              state.studentClassroomCalendarPickYmd = null;
+              render();
+            };
+          }
+          root.querySelectorAll('[data-cal-pick]').forEach(function (el) {
+            el.addEventListener('click', function (e) {
+              e.stopPropagation();
+              var yd = el.getAttribute('data-cal-pick');
+              if (yd) {
+                state.studentClassroomCalendarPickYmd = yd;
+                render();
+              }
+            });
+          });
+          root.querySelectorAll('[data-cal-nav]').forEach(function (b) {
+            b.addEventListener('click', function () {
+              var d = b.getAttribute('data-cal-nav');
+              var y = state.studentClassroomCalY;
+              var m0 = state.studentClassroomCalM;
+              if (y == null || m0 == null) {
+                var t2 = new Date();
+                y = t2.getFullYear();
+                m0 = t2.getMonth();
+              }
+              if (d === 'prev') {
+                if (m0 <= 0) {
+                  y--;
+                  m0 = 11;
+                } else {
+                  m0--;
+                }
+              } else {
+                if (m0 >= 11) {
+                  y++;
+                  m0 = 0;
+                } else {
+                  m0++;
+                }
+              }
+              state.studentClassroomCalY = y;
+              state.studentClassroomCalM = m0;
+              render();
+            });
+          });
           var btnCh = document.getElementById('btnCrCheckin');
           if (btnCh && !state.studentClassroomCheckinBusy) {
             btnCh.onclick = function () {
@@ -2109,31 +2508,47 @@
               var noteEl = document.getElementById('crCheckinNote');
               var classroomId = sel && sel.value ? sel.value.trim() : '';
               var note = noteEl && noteEl.value ? noteEl.value.trim().slice(0, 500) : '';
-              var file = fid && fid.files && fid.files[0];
+              var files = fid && fid.files ? fid.files : null;
+              var n = files ? files.length : 0;
               if (!classroomId) {
                 alert('请选择班级');
                 return;
               }
-              if (!file) {
-                alert('请选择录音文件');
+              if (!n) {
+                alert('请至少选择一个录音文件');
                 return;
               }
+              var parts = [];
+              for (var fi = 0; fi < n; fi++) {
+                parts.push(files[fi]);
+              }
+              state.studentClassroomCheckinClassId = classroomId;
               state.studentClassroomCheckinBusy = true;
               state.studentClassroomCheckinMsg = '正在上传并评测…';
               render();
-              var qs = new URLSearchParams({
-                username: currentUser,
-                classroomId: classroomId,
-                note: note
-              });
-              file
-                .arrayBuffer()
-                .then(function (buf) {
-                  var ct = file.type && file.type.indexOf('audio') === 0 ? file.type : 'audio/webm';
-                  return fetch(API_NODE + '/api/student/classroom-checkin?' + qs.toString(), {
+              Promise.all(
+                parts.map(function (file) {
+                  return blobToBase64(file);
+                })
+              )
+                .then(function (b64arr) {
+                  return fetch(API_NODE + '/api/student/classroom-checkin-batch', {
                     method: 'POST',
-                    headers: { 'Content-Type': ct },
-                    body: buf
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      username: currentUser,
+                      classroomId: classroomId,
+                      note: note,
+                      audioParts: b64arr.map(function (b64, j) {
+                        return {
+                          b64: b64,
+                          contentType:
+                            parts[j] && parts[j].type && parts[j].type.indexOf('audio') === 0
+                              ? parts[j].type
+                              : 'audio/webm'
+                        };
+                      })
+                    })
                   });
                 })
                 .then(function (r) {
@@ -2144,14 +2559,22 @@
                 .then(function (data) {
                   state.studentClassroomCheckinBusy = false;
                   if (data && data.ok) {
-                    state.studentClassroomLastEval = data.evalData && typeof data.evalData === 'object' ? data.evalData : null;
-                    state.studentClassroomCheckinMsg =
-                      '提交成功 · ' +
-                      (data.submittedAt || '') +
-                      '。下方已显示 TokenHub 批改；教师端会保留同一条评测快照，站外沟通可由老师自行安排。';
-                  } else {
-                    state.studentClassroomCheckinMsg = (data && data.message) || '提交失败';
+                    var d0 = new Date();
+                    state.studentClassroomCheckinMsg = '打卡成功';
+                    state.studentClassroomCalY = d0.getFullYear();
+                    state.studentClassroomCalM = d0.getMonth();
+                    var ymd0 = ymdFromDateObj(d0);
+                    state.studentClassroomCalendarPickYmd = ymd0;
+                    state.studentClassroomStampYmd = ymd0;
+                    state.studentClassroomFireworksUntil = Date.now() + 5200;
+                    setTimeout(function () {
+                      state.studentClassroomFireworksUntil = 0;
+                      render();
+                    }, 5400);
+                    loadStudentClassroomCheckinsForState(true);
+                    return;
                   }
+                  state.studentClassroomCheckinMsg = (data && data.message) || '提交失败';
                   render();
                 })
                 .catch(function () {
@@ -2226,6 +2649,10 @@
             state.studentClassroomMy = null;
             state.studentClassroomErr = '';
             state.studentClassroomCheckinMsg = '';
+            state.studentClassroomCheckinClassId = '';
+            state.studentClassroomCheckinList = null;
+            state.studentClassroomCheckinListForClass = null;
+            state.studentClassroomCalendarPickYmd = null;
             render();
           };
           return;
@@ -2793,6 +3220,10 @@
               state.studentClassroomMy = null;
               state.studentClassroomErr = '';
               state.studentClassroomCheckinMsg = '';
+              state.studentClassroomCheckinClassId = '';
+              state.studentClassroomCheckinList = null;
+              state.studentClassroomCheckinListForClass = null;
+              state.studentClassroomCalendarPickYmd = null;
               render();
             };
           }

@@ -205,7 +205,7 @@ function pruneLiveInterviewTranscripts() {
 // 允许任意来源访问（本地开发）；部署时可改为具体前端域名
 app.use(cors({ origin: true, credentials: false }));
 // 学生提交录音 base64 体积较大，需放宽限制（默认约 100kb 会 413）
-app.use(express.json({ limit: '40mb' }));
+app.use(express.json({ limit: '80mb' }));
 
 // 根路径：避免直接打开 localhost:3000 白屏
 app.get('/', (req, res) => {
@@ -984,6 +984,25 @@ app.post('/api/student/classrooms/leave', async (req, res) => {
   }
 });
 
+/** 上传一段音频到 Python upload-audio-correct，返回解析后的 JSON 对象；失败时抛错或返回 { error } */
+async function runUploadAudioCorrectToPython(audioBuffer, contentType) {
+  const bytes = audioBuffer;
+  if (!Buffer.isBuffer(bytes) || bytes.length < 100) {
+    return { err: '缺少有效音频' };
+  }
+  const mt = (contentType && String(contentType)) || 'audio/webm';
+  const form = new FormData();
+  const audioBlob = new Blob([bytes], { type: mt.indexOf('audio') === 0 ? mt : 'audio/webm' });
+  form.append('audio', audioBlob, 'classroom-checkin.webm');
+  const pyResp = await fetch(PYTHON_BASE_URL + '/api/upload-audio-correct', { method: 'POST', body: form });
+  const pyData = await pyResp.json().catch(() => ({}));
+  if (!pyResp.ok || !pyData || pyData.ok !== true) {
+    const msg = pyData && pyData.error ? pyData.error : '评测失败';
+    return { err: String(msg) };
+  }
+  return { data: pyData };
+}
+
 app.post(
   '/api/student/classroom-checkin',
   express.raw({ type: 'audio/*', limit: '20mb' }),
@@ -1032,15 +1051,11 @@ app.post(
       if (!audioBytes || audioBytes.length < 100) {
         return res.status(400).json({ ok: false, message: '缺少有效音频' });
       }
-      const form = new FormData();
-      const audioBlob = new Blob([audioBytes], { type: 'audio/webm' });
-      form.append('audio', audioBlob, 'classroom-checkin.webm');
-      const pyResp = await fetch(PYTHON_BASE_URL + '/api/upload-audio-correct', { method: 'POST', body: form });
-      const pyData = await pyResp.json().catch(() => ({}));
-      if (!pyResp.ok || !pyData || pyData.ok !== true) {
-        const msg = pyData && pyData.error ? pyData.error : '评测失败';
-        return res.status(500).json({ ok: false, message: String(msg) });
+      const r = await runUploadAudioCorrectToPython(audioBytes, 'audio/webm');
+      if (r.err) {
+        return res.status(500).json({ ok: false, message: r.err });
       }
+      const pyData = r.data;
       const { data: ins, error: insErr } = await supabase
         .from('classroom_checkins')
         .insert({
@@ -1062,6 +1077,142 @@ app.post(
     }
   }
 );
+
+/**
+ * 学生 · 多文件打卡（一次请求并行评测多段录音，单条 eval_data: { multi, files: [...] }，仍计 1 次今日打卡）
+ */
+app.post('/api/student/classroom-checkin-batch', async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const uname = String(body.username || body.studentName || '').trim();
+    const classroomId = String(body.classroomId || '').trim();
+    const note = String(body.note != null ? body.note : '').trim().slice(0, 500);
+    const parts = Array.isArray(body.audioParts) ? body.audioParts : null;
+    if (!uname || !classroomId) {
+      return res.status(400).json({ ok: false, message: '需要 username 与 classroomId' });
+    }
+    if (!parts || parts.length < 1) {
+      return res.status(400).json({ ok: false, message: '请至少上传一个录音文件' });
+    }
+    if (parts.length > 12) {
+      return res.status(400).json({ ok: false, message: '单次最多 12 个文件' });
+    }
+    if (!(await userHasRole(uname, 'student'))) {
+      return res.status(403).json({ ok: false, message: '仅学生可打卡' });
+    }
+    const { data: m, error: mErr } = await supabase
+      .from('classroom_members')
+      .select('classroom_id')
+      .eq('classroom_id', classroomId)
+      .eq('student_username', uname)
+      .maybeSingle();
+    if (mErr || !m) {
+      return res.status(403).json({ ok: false, message: '请先加入该班级再打卡' });
+    }
+    if (CLASSROOM_CHECKIN_DAILY_LIMIT > 0) {
+      const { count, error: cErr } = await supabase
+        .from('classroom_checkins')
+        .select('*', { count: 'exact', head: true })
+        .eq('classroom_id', classroomId)
+        .eq('student_username', uname)
+        .gte('submitted_at', startOfUtcDayIso());
+      if (cErr) {
+        console.error(cErr);
+        return res.status(500).json({ ok: false, message: '次数校验失败' });
+      }
+      if ((count || 0) >= CLASSROOM_CHECKIN_DAILY_LIMIT) {
+        return res.status(429).json({
+          ok: false,
+          message: `本班今日打卡已达上限（${CLASSROOM_CHECKIN_DAILY_LIMIT} 次/人，UTC 日）。可联系教师或明日再试。可在服务端设置 CLASSROOM_CHECKIN_DAILY_LIMIT。`,
+        });
+      }
+    }
+    const buffers = [];
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i] || {};
+      const b64 = typeof p.b64 === 'string' ? p.b64 : typeof p.audioB64 === 'string' ? p.audioB64 : '';
+      if (!b64) {
+        return res.status(400).json({ ok: false, message: `第 ${i + 1} 个文件缺少数据` });
+      }
+      let buf;
+      try {
+        buf = Buffer.from(b64, 'base64');
+      } catch (e) {
+        return res.status(400).json({ ok: false, message: `第 ${i + 1} 个文件数据无效` });
+      }
+      if (!buf || buf.length < 100) {
+        return res.status(400).json({ ok: false, message: `第 ${i + 1} 个文件过小或无效` });
+      }
+      const ct = typeof p.contentType === 'string' ? p.contentType : 'audio/webm';
+      buffers.push({ buf, contentType: ct });
+    }
+    const results = await Promise.all(
+      buffers.map((b) => runUploadAudioCorrectToPython(b.buf, b.contentType))
+    );
+    const firstErr = results.find((r) => r.err);
+    if (firstErr) {
+      return res.status(500).json({ ok: false, message: firstErr.err });
+    }
+    const files = results.map((r) => r.data);
+    const evalData = { ok: true, multi: true, files };
+    const { data: ins, error: insErr } = await supabase
+      .from('classroom_checkins')
+      .insert({
+        classroom_id: classroomId,
+        student_username: uname,
+        note: note || null,
+        eval_data: evalData,
+      })
+      .select('id, submitted_at')
+      .single();
+    if (insErr || !ins) {
+      console.error(insErr);
+      return res.status(500).json({ ok: false, message: '保存打卡失败' });
+    }
+    res.json({ ok: true, id: ins.id, submittedAt: ins.submitted_at, evalData });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '打卡失败' });
+  }
+});
+
+/** 学生 · 本班已提交打卡（日历用，仅本人） */
+app.get('/api/student/classroom-checkins', async (req, res) => {
+  try {
+    const uname = (req.query.username || req.query.studentName || '').trim();
+    const classroomId = (req.query.classroomId || '').trim();
+    if (!uname || !classroomId) {
+      return res.status(400).json({ ok: false, message: '需要 username 与 classroomId' });
+    }
+    if (!(await userHasRole(uname, 'student'))) {
+      return res.status(403).json({ ok: false, message: '仅学生可查看' });
+    }
+    const { data: m, error: mErr } = await supabase
+      .from('classroom_members')
+      .select('classroom_id')
+      .eq('classroom_id', classroomId)
+      .eq('student_username', uname)
+      .maybeSingle();
+    if (mErr || !m) {
+      return res.status(403).json({ ok: false, message: '未加入该班级' });
+    }
+    const { data: rows, error } = await supabase
+      .from('classroom_checkins')
+      .select('id, note, eval_data, submitted_at')
+      .eq('classroom_id', classroomId)
+      .eq('student_username', uname)
+      .order('submitted_at', { ascending: true })
+      .limit(500);
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ ok: false, message: '查询失败' });
+    }
+    res.json({ ok: true, list: rows || [] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '查询失败' });
+  }
+});
 
 // ---------- 教师：布置任务 ----------
 app.get('/api/teacher/assignments', async (req, res) => {
@@ -1707,7 +1858,7 @@ const server = app.listen(PORT, () => {
   console.log('已连接 Supabase 云数据库');
   console.log('后端运行在 http://localhost:' + PORT);
   console.log(
-    'API: auth, practice, tencent-asr/sign, teacher/assignments & classrooms, student/assignments & classrooms & classroom-checkin, submit-audio, …' +
+    'API: auth, practice, tencent-asr/sign, teacher/assignments & classrooms, student/assignments & classrooms & classroom-checkin / classroom-checkin-batch & classroom-checkins, submit-audio, …' +
       (String(process.env.POC_MODE || '').trim() === '1' ? ' poc/*' : '')
   );
   if (TENCENT_ASR_APP_ID && TENCENT_ASR_SECRET_ID && TENCENT_ASR_SECRET_KEY) {
