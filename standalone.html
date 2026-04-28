@@ -638,15 +638,85 @@
         { id: 'wording', title: '措辞与造句', file: 'wordingtestmaterial.text' }
       ];
 
-      /** 纸质练习 .text：与当前页面同目录（与 assetUrl 一致，兼容 GitHub Pages 仓库子路径） */
+      /**
+       * 纸质练习 .text：按「当前页面所在目录」拼接，兼容 GitHub Pages（含 pathname 无尾部斜杠、仅 /repo 等情况）
+       * 勿仅用 new URL(rel, href)：在 /user/repo 这类路径下会把资源解析到域名根路径导致 404。
+       */
       function resolveMaterialFileUrl(fname) {
         try {
           var rel = String(fname || '').trim();
           if (!rel) return window.location.href;
-          return assetUrl(rel);
+          var u = new URL(window.location.href);
+          var path = u.pathname || '/';
+          var dirPath;
+          if (path.endsWith('/')) {
+            dirPath = path;
+          } else {
+            var lastSeg = path.slice(path.lastIndexOf('/') + 1);
+            if (lastSeg.indexOf('.') !== -1) {
+              dirPath = path.replace(/[^/]+$/, '');
+            } else {
+              dirPath = path + '/';
+            }
+          }
+          if (!dirPath.endsWith('/')) dirPath += '/';
+          var encoded = rel
+            .split('/')
+            .map(function (seg) {
+              return encodeURIComponent(seg);
+            })
+            .join('/');
+          u.pathname = dirPath + encoded;
+          u.hash = '';
+          u.search = '';
+          return u.href;
         } catch (e) {
           return fname;
         }
+      }
+
+      /** Example 材料：同源 Pages → Raw GitHub → jsDelivr（公開仓库）；可用 ?examplePractice=https://… 强制指定 */
+      function examplePracticeFetchUrlList() {
+        var list = [];
+        function add(u) {
+          if (!u) return;
+          var s = String(u).trim();
+          if (list.indexOf(s) === -1) list.push(s);
+        }
+        try {
+          var sp = new URLSearchParams(window.location.search || '');
+          var ov = sp.get('examplePractice');
+          if (ov && /^https?:\/\//i.test(String(ov).trim())) add(String(ov).trim());
+        } catch (_) {}
+        add(resolveMaterialFileUrl('example-practice.text'));
+        var brs = ['main', 'master'];
+        var bi;
+        for (bi = 0; bi < brs.length; bi++) {
+          var br = brs[bi];
+          add(
+            'https://raw.githubusercontent.com/Fei-Zzhang/speaking-practice/' +
+              br +
+              '/example-practice.text'
+          );
+          add('https://cdn.jsdelivr.net/gh/Fei-Zzhang/speaking-practice@' + br + '/example-practice.text');
+        }
+        return list;
+      }
+      function fetchFirstOkTextUrls(urls, i) {
+        if (!urls || i >= urls.length) {
+          return Promise.reject(new Error('no url'));
+        }
+        var url = urls[i];
+        return fetch(url, { cache: 'no-cache', mode: 'cors' })
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.text().then(function (text) {
+              return { text: text, url: url };
+            });
+          })
+          .catch(function () {
+            return fetchFirstOkTextUrls(urls, i + 1);
+          });
       }
 
       function getStudentNavActive() {
@@ -701,8 +771,7 @@
         '<li>2️⃣ 读题；</li>' +
         '<li>3️⃣ 开始录音；</li>' +
         '<li>4️⃣ 结束录音；</li>' +
-        '<li>5️⃣ 结束录音后由云端 <strong>TokenHub</strong> 批改（与微信小程序同源），查看修改后与中文反馈；</li>' +
-        '<li>6️⃣ 也可在「上传录音批改」中直接上传音频文件，由服务端 ASR + TokenHub 评测。</li>' +
+        '<li>5️⃣ 结束录音后由云端 <strong>TokenHub</strong> 批改（与微信小程序同源），查看修改后与中文反馈。</li>' +
         '</ol>';
 
       var HELP_HTML_PRACTICE =
@@ -2791,16 +2860,11 @@
 
             if (state.studentFunExampleRaw == null && !state.studentFunExampleLoading && !state.studentFunExampleErr) {
               state.studentFunExampleLoading = true;
-              var exFile = 'example-practice.text';
-              var exUrl = resolveMaterialFileUrl(exFile);
-              fetch(exUrl, { cache: 'no-cache' })
-                .then(function (r) {
-                  if (!r.ok) throw new Error('HTTP ' + r.status);
-                  return r.text();
-                })
-                .then(function (text) {
-                  state.studentFunExampleRaw = text;
-                  state.studentFunParsedDays = parseExamplePracticeDaySections(text);
+              var tryUrls = examplePracticeFetchUrlList();
+              fetchFirstOkTextUrls(tryUrls, 0)
+                .then(function (res) {
+                  state.studentFunExampleRaw = res.text;
+                  state.studentFunParsedDays = parseExamplePracticeDaySections(res.text);
                   state.studentFunExampleLoading = false;
                   state.studentFunExampleErr = '';
                   render();
@@ -2808,9 +2872,9 @@
                 .catch(function () {
                   state.studentFunExampleLoading = false;
                   state.studentFunExampleErr =
-                    '无法加载 Example 材料（example-practice.text）。请求地址：' +
-                    exUrl +
-                    '。请将仓库中与 standalone.html 同目录的 example-practice.text 推送至默认分支并等待 GitHub Pages 构建完成（约 1～3 分钟后 Ctrl+F5 强刷）；不要在浏览器中用本地 file:// 打开本站。';
+                    '无法加载 Example 材料（example-practice.text）。已依次尝试：' +
+                    tryUrls.join(' · ') +
+                    '。若仓库为公开，一般 Raw 备用可通；也可在地址栏追加 ?examplePractice= 材料完整 https 链接 覆盖。';
                   render();
                 });
             }
@@ -3632,7 +3696,7 @@
           return;
         }
 
-        // 学生端 · 已登录：题库 → LNR / Interview / 上传录音批改
+        // 学生端 · 已登录：题库 → LNR / Interview / 班级
         if (PORTAL === 'student' && state.mainChoice === 'studentBankPick' && currentUser) {
           try {
             document.title = "fei's studio · 题库";
@@ -3663,19 +3727,11 @@
             '</div>' +
             '<span class="stu-bank-card-cta">进入 Interview</span>' +
             '</div></div>' +
-            '<div class="stu-bank-card" data-action="stuPickUpload" role="button" tabindex="0">' +
-            '<div class="stu-bank-card-inner">' +
-            '<div>' +
-            '<h2>上传录音批改</h2>' +
-            '<p>自选音频：录音文件识别（长段）+ TokenHub 批改</p>' +
-            '</div>' +
-            '<span class="stu-bank-card-cta">进入</span>' +
-            '</div></div>' +
             '<div class="stu-bank-card" data-action="stuPickClassroom" role="button" tabindex="0">' +
             '<div class="stu-bank-card-inner">' +
             '<div>' +
             '<h2>班级 · 入班与打卡</h2>' +
-            '<p>查看全部班级、加入本班、上传每日录音打卡；教师可集中查看与写反馈（消耗与「上传」相同 Token/ASR）</p>' +
+            '<p>查看全部班级、加入本班、上传每日录音打卡；教师可集中查看与写反馈（评测消耗 Token/ASR）。</p>' +
             '</div>' +
             '<span class="stu-bank-card-cta">进入</span>' +
             '</div></div>' +
@@ -3711,13 +3767,6 @@
             state.realTestError = '';
             state.realWebSpeechLive = '';
             state.realTencentLive = '';
-            render();
-          };
-          root.querySelector('[data-action=stuPickUpload]').onclick = function () {
-            state.mainChoice = 'upload';
-            state.realTestLoading = false;
-            state.realTestError = '';
-            state.realTestResult = null;
             render();
           };
           root.querySelector('[data-action=stuPickClassroom]').onclick = function () {
@@ -4373,7 +4422,7 @@
               </div>
               <div class="card" data-action="main" data-choice="upload">
                 <h2>上传录音批改</h2>
-                <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">试测：与学生活页相同，<strong>录音文件 ASR + TokenHub</strong>（<code>/api/upload-audio-correct</code>）</p>
+                <p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">教师试测：<strong>录音文件 ASR + TokenHub</strong>（<code>/api/upload-audio-correct</code>）</p>
                 <button class="primary" style="margin-top:0.5rem">进入</button>
               </div>
             </div>
@@ -7166,8 +7215,17 @@
           return;
         }
 
-        // ---------- 上传录音：服务端 ASR + TokenHub（/api/upload-audio-correct）----------
+        // ---------- 上传录音：服务端 ASR + TokenHub（仅教师端；学生端题库不包含此项）----------
         if (state.mainChoice === 'upload') {
+          if (PORTAL === 'student') {
+            state.mainChoice = currentUser ? 'studentBankPick' : null;
+            if (currentUser) state.studentNav = 'bank';
+            state.realTestLoading = false;
+            state.realTestError = '';
+            state.realTestResult = null;
+            render();
+            return;
+          }
           const loading = state.realTestLoading;
           const result = state.realTestResult;
           const error = state.realTestError;
