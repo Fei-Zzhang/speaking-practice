@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <title>口语练习</title>
+    <title>fei's studio · 学习</title>
   <style>
     :root {
       --bg: #f5f5f7;
@@ -110,6 +110,48 @@
     .material-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
     .material-tabs button { padding: 0.45rem 0.75rem; font-size: 0.88rem; }
     .material-tabs button.tab-active { background: var(--accent); color: #fff; }
+    /* 学生 · 学习首页（fei's studio 风格） */
+    .stu-home-body { background: #f5f7ff; margin: 0 calc(-1 * clamp(1rem, 4vw, 2.5rem)); padding: 0 clamp(1rem, 4vw, 2.5rem) 2rem; }
+    .stu-home-hero {
+      background: linear-gradient(105deg, rgba(99,102,241,0.14), rgba(224,231,255,0.92));
+      border-radius: 16px;
+      padding: 1.35rem 1.5rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 4px 24px rgba(99,102,241,0.1);
+    }
+    .stu-home-hero h1 { margin: 0 0 0.5rem; font-size: clamp(1.25rem, 4vw, 1.65rem); font-weight: 700; color: var(--text); }
+    .stu-home-hero p { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.55; }
+    .stu-home-accent { color: var(--accent); font-weight: 700; }
+    .stu-home-progress-track { background: #fff; border-radius: 999px; height: 10px; overflow: hidden; margin-top: 0.65rem; }
+    .stu-home-progress-fill { background: var(--accent); height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+    .stu-home-progress-meta { display: flex; justify-content: space-between; margin-top: 0.35rem; font-size: 0.82rem; color: var(--muted); }
+    .stu-home-class-shell { border: 1px solid rgba(99,102,241,0.12); border-radius: 14px; overflow: hidden; background: #fafbff; }
+    .stu-home-class-head { padding: 0.85rem 1rem; background: rgba(99,102,241,0.06); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.92rem; }
+    .stu-home-class-inner { padding: 1.5rem 1rem; text-align: center; }
+    .stu-home-class-inner h3 { margin: 0 0 0.35rem; font-size: 1.35rem; font-weight: 700; }
+    .stu-home-class-inner .tagline { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
+    .stu-home-quick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+    .stu-home-qcard {
+      background: #fff; border-radius: 12px; padding: 1.15rem 1.15rem 1.25rem;
+      border: 1px solid rgba(99,102,241,0.1); box-shadow: 0 4px 18px rgba(99,102,241,0.07);
+      transition: border-color 0.2s, box-shadow 0.2s; cursor: pointer; text-align: left;
+    }
+    .stu-home-qcard:hover { border-color: rgba(99,102,241,0.45); box-shadow: 0 8px 22px rgba(99,102,241,0.12); }
+    .stu-home-qcard .ico {
+      width: 46px; height: 46px; border-radius: 10px; background: rgba(99,102,241,0.12); display: flex; align-items: center; justify-content: center;
+      font-size: 1.35rem; margin-bottom: 0.65rem;
+    }
+    .stu-home-qcard h3 { margin: 0 0 0.35rem; font-size: 1.05rem; font-weight: 700; }
+    .stu-home-qcard p { margin: 0; font-size: 0.88rem; color: var(--muted); line-height: 1.45; }
+    .stu-home-tip {
+      background: rgba(224,231,255,0.45); border-radius: 14px; padding: 1.15rem 1.25rem;
+      border: 1px solid rgba(99,102,241,0.12);
+    }
+    .stu-home-tip h2 { margin: 0 0 0.65rem; font-size: 1.08rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem; }
+    .stu-home-tip p { margin: 0; color: var(--text); font-size: 0.94rem; line-height: 1.55; }
+    .stu-home-footer { text-align: center; padding: 1.25rem 0 0; margin-top: 0.5rem; font-size: 0.82rem; color: var(--muted); border-top: 1px solid rgba(99,102,241,0.12); }
+    .stu-home-row-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+    .stu-home-row-head h2 { margin: 0 0 0.35rem; font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.35rem; }
     /* 班级打卡：学生端横向批改卡片 + 日历 */
     .classroom-cards-scroller {
       display: flex; gap: 0.75rem; overflow-x: auto; scroll-snap-type: x mandatory; padding: 0.5rem 0 0.75rem;
@@ -1288,6 +1330,15 @@
         try {
           localStorage.setItem(funPracticeStorageKey(), JSON.stringify(p));
         } catch (_) {}
+      }
+      /** 学习首页进度展示：趣味 Example 日历盖章次数（本地） */
+      function studentHomeStampCount() {
+        try {
+          var fp = loadFunPracticeLocal();
+          return Array.isArray(fp.stampDates) ? fp.stampDates.length : 0;
+        } catch (_) {
+          return 0;
+        }
       }
       function setCurrentUser(name) {
         try { sessionStorage.setItem(AUTH_KEY, name); } catch (_) {}
@@ -3367,15 +3418,60 @@
           if (state.studentNav === 'home') {
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card">' +
-              '<div class="student-home-brand"><img class="student-home-logo" src="' +
+              '<div class="stu-home-body">' +
+              '<div style="text-align:center;margin-bottom:1rem"><img class="student-home-logo" src="' +
               assetUrl('fei-studio-brand.png') +
-              '" alt="fei\'s studio" /></div>' +
-              '<div class="student-home-cover"><img class="student-home-cover-img" src="' +
-              assetUrl('fei-studio-brand.png') +
-              '" alt="" /></div>' +
+              '" alt="fei\'s studio" style="height:42px;margin:0 auto;display:block" /></div>' +
+              '<section class="stu-home-hero">' +
+              '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:1rem">' +
+              '<div style="flex:1;min-width:220px">' +
+              '<h1>坚持，是学习最好的捷径 ✨</h1>' +
+              '<p style="margin:0">登录后加入班级、完成录音打卡与趣味练习，进度将与账号同步。</p>' +
+              '</div>' +
+              '<div style="width:100%;max-width:280px">' +
+              '<div class="stu-home-progress-track"><div class="stu-home-progress-fill" style="width:28%"></div></div>' +
+              '<div class="stu-home-progress-meta"><span>今日打卡</span><span>登录解锁</span></div>' +
+              '</div></div></section>' +
+              '<section class="card" style="margin-bottom:1rem;border:none;box-shadow:0 4px 22px rgba(99,102,241,0.08)">' +
+              '<div class="stu-home-row-head">' +
+              '<div><h2 style="margin:0 0 0.35rem;font-size:1.12rem;display:flex;align-items:center;gap:0.35rem"><span aria-hidden="true">👥</span>班级 · 入班与打卡</h2>' +
+              '<p style="color:var(--muted);font-size:0.9rem;margin:0">加入老师创建的班级，提交每日录音打卡。</p></div>' +
+              '<button type="button" class="primary" data-action="guestNeedLogin">登录后进入</button></div>' +
+              '</section>' +
+              '<section class="stu-home-quick-grid">' +
+              '<div class="stu-home-qcard" data-action="guestNeedLogin"><div class="ico" aria-hidden="true">🎤</div><h3>立即打卡</h3><p>登录并加入班级后提交录音</p></div>' +
+              '<div class="stu-home-qcard" data-action="guestGoBank"><div class="ico" aria-hidden="true">📚</div><h3>进入题库</h3><p>浏览题库（部分内容需登录）</p></div>' +
+              '<div class="stu-home-qcard" data-action="guestGoPractice"><div class="ico" aria-hidden="true">✏️</div><h3>开始练习</h3><p>趣味 Example 与语法闯关</p></div>' +
+              '</section>' +
+              '<section class="stu-home-tip">' +
+              '<h2><span aria-hidden="true">💡</span>今日学习小贴士</h2>' +
+              '<p>每天坚持15分钟录音练习，口语进步会比想象中更快！</p>' +
+              '</section>' +
+              '<footer class="stu-home-footer">© 2026 fei\'s studio · 让学习更有动力</footer>' +
               '</div>';
             bindStudentTopNav(root);
+            root.querySelectorAll('[data-action=guestNeedLogin]').forEach(function (el) {
+              el.onclick = function () {
+                state.studentNav = 'login';
+                render();
+              };
+            });
+            var gb = root.querySelector('[data-action=guestGoBank]');
+            if (gb) {
+              gb.onclick = function () {
+                state.studentNav = 'bank';
+                state.mainChoice = null;
+                render();
+              };
+            }
+            var gpr = root.querySelector('[data-action=guestGoPractice]');
+            if (gpr) {
+              gpr.onclick = function () {
+                state.studentNav = 'practice';
+                state.mainChoice = 'studentMaterial';
+                render();
+              };
+            }
             return;
           }
           if (state.studentNav === 'bank') {
@@ -3675,23 +3771,67 @@
             state.studentNav = 'home';
           }
           var stNav = studentTopNavHtml();
-          var classCardHtml = currentUser
-            ? '<div class="card" style="margin-bottom:1rem;border-color:var(--accent)">' +
-              '<h2 style="margin-top:0">班级 · 入班与打卡</h2>' +
-              '<p style="color:var(--muted);font-size:0.9rem;margin:0.5rem 0 0">加入老师创建的班级，提交每日录音打卡（也可从顶栏「题库」进入同一入口）。</p>' +
-              '<button type="button" class="primary" style="margin-top:0.75rem" data-action="studentHomeClassroom">进入班级</button>' +
-              '</div>'
-            : '';
+          var stampN = studentHomeStampCount();
+          var goal = 10;
+          var pctHero = Math.min(100, Math.max(8, Math.round((stampN / goal) * 100)));
+          var classBlock =
+            '<section class="card" style="margin-bottom:1rem;border:none;box-shadow:0 4px 22px rgba(99,102,241,0.08)">' +
+            '<div class="stu-home-row-head">' +
+            '<div><h2 style="margin:0 0 0.35rem;font-size:1.12rem;display:flex;align-items:center;gap:0.35rem"><span aria-hidden="true">👥</span>班级 · 入班与打卡</h2>' +
+            '<p style="color:var(--muted);font-size:0.9rem;margin:0">加入老师创建的班级，提交每日录音打卡（也可从顶栏「题库」进入同一入口）。</p></div>' +
+            '<button type="button" class="primary" data-action="studentHomeClassroom">进入班级</button></div>' +
+            '<div class="stu-home-class-shell">' +
+            '<div class="stu-home-class-head">fei\'s studio</div>' +
+            '<div class="stu-home-class-inner">' +
+            '<h3>fei\'s studio</h3>' +
+            '<p class="tagline">一起进步，共同成长</p>' +
+            '<div style="max-width:420px;margin:0 auto;text-align:left">' +
+            '<div style="display:flex;justify-content:space-between;margin-bottom:0.35rem;font-size:0.88rem;color:var(--muted)">' +
+            '<span>今日打卡进度</span><span style="color:var(--accent);font-weight:600">' +
+            pctHero +
+            '%</span></div>' +
+            '<div class="stu-home-progress-track" style="height:8px;background:#eef0ff">' +
+            '<div class="stu-home-progress-fill" style="width:' +
+            pctHero +
+            '%"></div></div></div></div></div>' +
+            '</section>';
           root.innerHTML =
             stNav +
-            classCardHtml +
-            '<div class="card">' +
-            '<div class="student-home-brand"><img class="student-home-logo" src="' +
+            '<div class="stu-home-body">' +
+            '<div style="text-align:center;margin-bottom:1rem"><img class="student-home-logo" src="' +
             assetUrl('fei-studio-brand.png') +
-            '" alt="fei\'s studio" /></div>' +
-            '<div class="student-home-cover"><img class="student-home-cover-img" src="' +
-            assetUrl('fei-studio-brand.png') +
-            '" alt="" /></div>' +
+            '" alt="fei\'s studio" style="height:42px;margin:0 auto;display:block" /></div>' +
+            '<section class="stu-home-hero">' +
+            '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:1rem">' +
+            '<div style="flex:1;min-width:220px">' +
+            '<h1>坚持，是学习最好的捷径 ✨</h1>' +
+            '<p style="margin:0">你已累积趣味练习日历章 <span class="stu-home-accent">' +
+            stampN +
+            '</span> 枚；再完成 <strong>' +
+            Math.max(0, goal - stampN) +
+            '</strong> 枚即可达标示意目标（可在「练习 · 趣味」中闯关盖章）。</p>' +
+            '</div>' +
+            '<div style="width:100%;max-width:280px">' +
+            '<div class="stu-home-progress-track"><div class="stu-home-progress-fill" style="width:' +
+            pctHero +
+            '%"></div></div>' +
+            '<div class="stu-home-progress-meta"><span>今日打卡</span><span>' +
+            stampN +
+            ' / ' +
+            goal +
+            ' 枚</span></div>' +
+            '</div></div></section>' +
+            classBlock +
+            '<section class="stu-home-quick-grid">' +
+            '<div class="stu-home-qcard" data-action="studentHomeQuickCheckin"><div class="ico" aria-hidden="true">🎤</div><h3>立即打卡</h3><p>提交今日录音，完成学习任务</p></div>' +
+            '<div class="stu-home-qcard" data-action="studentHomeQuickBank"><div class="ico" aria-hidden="true">📚</div><h3>进入题库</h3><p>海量练习题，巩固所学知识</p></div>' +
+            '<div class="stu-home-qcard" data-action="studentHomeQuickPractice"><div class="ico" aria-hidden="true">✏️</div><h3>开始练习</h3><p>针对性练习，提升学习效率</p></div>' +
+            '</section>' +
+            '<section class="stu-home-tip">' +
+            '<h2><span aria-hidden="true">💡</span>今日学习小贴士</h2>' +
+            '<p>每天坚持15分钟录音练习，口语进步会比想象中更快！</p>' +
+            '</section>' +
+            '<footer class="stu-home-footer">© 2026 fei\'s studio · 让学习更有动力</footer>' +
             '</div>';
           bindStudentTopNav(root);
           var btnHc = root.querySelector('[data-action=studentHomeClassroom]');
@@ -3707,6 +3847,48 @@
               state.studentClassroomCheckinList = null;
               state.studentClassroomCheckinListForClass = null;
               state.studentClassroomCalendarPickYmd = null;
+              render();
+            };
+          }
+          var qck = root.querySelector('[data-action=studentHomeQuickCheckin]');
+          if (qck) {
+            qck.onclick = function () {
+              state.mainChoice = 'studentClassrooms';
+              state.studentNav = 'bank';
+              state.studentClassroomAll = null;
+              state.studentClassroomMy = null;
+              state.studentClassroomErr = '';
+              state.studentClassroomCheckinMsg = '';
+              state.studentClassroomCheckinClassId = '';
+              state.studentClassroomCheckinList = null;
+              state.studentClassroomCheckinListForClass = null;
+              state.studentClassroomCalendarPickYmd = null;
+              render();
+            };
+          }
+          var qb = root.querySelector('[data-action=studentHomeQuickBank]');
+          if (qb) {
+            qb.onclick = function () {
+              state.studentNav = 'bank';
+              state.mainChoice = 'studentBankPick';
+              state.practiceBank = null;
+              state.practiceBankLoading = false;
+              state.realTestMode = 'topic';
+              state.realTestCategoryId = null;
+              state.realTestIndex = 0;
+              state.realTestResult = null;
+              state.realTestError = '';
+              state.realWebSpeechLive = '';
+              state.realTencentLive = '';
+              render();
+            };
+          }
+          var qp = root.querySelector('[data-action=studentHomeQuickPractice]');
+          if (qp) {
+            qp.onclick = function () {
+              state.studentNav = 'practice';
+              state.mainChoice = 'studentMaterial';
+              if (!state.studentMaterialTab) state.studentMaterialTab = 'grammar';
               render();
             };
           }
