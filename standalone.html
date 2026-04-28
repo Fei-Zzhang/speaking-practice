@@ -294,7 +294,16 @@
       function resolveMaterialFileUrl(fname) {
         try {
           var u = new URL(window.location.href);
-          u.pathname = u.pathname.replace(/[^/]*$/, fname);
+          var path = u.pathname || '/';
+          var slash = path.lastIndexOf('/');
+          var dir = slash >= 0 ? path.slice(0, slash + 1) : '/';
+          var encoded = String(fname || '')
+            .split('/')
+            .map(function (seg) {
+              return encodeURIComponent(seg);
+            })
+            .join('/');
+          u.pathname = dir + encoded;
           u.hash = '';
           u.search = '';
           return u.href;
@@ -363,7 +372,7 @@
         '<div class="help-tip-section">趣味练习</div>' +
         '<ol class="help-tip-ol">' +
         '<li>先打开「趣味首页」，进入 Example（每日解锁）、Reasoning（占位）或 Grammar（原大闯关）；</li>' +
-        '<li>Example 读取同目录 example练习.text，按 ## Day 1… 闯关；通关打卡后解锁下一天并盖章日历；登录且服务端已建表时可云端同步进度；</li>' +
+        '<li>Example 读取同目录 <code>example-practice.text</code>（优先，纯英文文件名）或 <code>example练习.text</code>；按 ## Day 1… 闯关；</li>' +
         '<li>Grammar 仍为语法 / 话题 / 措辞选择题闯关。</li>' +
         '</ol>';
 
@@ -2217,23 +2226,31 @@
 
             if (state.studentFunExampleRaw == null && !state.studentFunExampleLoading && !state.studentFunExampleErr) {
               state.studentFunExampleLoading = true;
-              fetch(resolveMaterialFileUrl('example练习.text'), { cache: 'default' })
-                .then(function (r) {
-                  if (!r.ok) throw new Error('HTTP ' + r.status);
-                  return r.text();
-                })
-                .then(function (text) {
-                  state.studentFunExampleRaw = text;
-                  state.studentFunParsedDays = parseExamplePracticeDaySections(text);
+              var exFiles = ['example-practice.text', 'example练习.text'];
+              (function tryEx(i) {
+                if (i >= exFiles.length) {
                   state.studentFunExampleLoading = false;
-                  state.studentFunExampleErr = '';
+                  state.studentFunExampleErr =
+                    '无法加载 Example 材料（已依次请求 example-practice.text、example练习.text）。请将任一文件与 standalone 网页放在同一目录并重新部署；推荐使用英文文件名 example-practice.text。';
                   render();
-                })
-                .catch(function () {
-                  state.studentFunExampleLoading = false;
-                  state.studentFunExampleErr = '无法加载 example练习.text（请与 standalone 同目录部署）';
-                  render();
-                });
+                  return;
+                }
+                fetch(resolveMaterialFileUrl(exFiles[i]), { cache: 'default' })
+                  .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.text();
+                  })
+                  .then(function (text) {
+                    state.studentFunExampleRaw = text;
+                    state.studentFunParsedDays = parseExamplePracticeDaySections(text);
+                    state.studentFunExampleLoading = false;
+                    state.studentFunExampleErr = '';
+                    render();
+                  })
+                  .catch(function () {
+                    tryEx(i + 1);
+                  });
+              })(0);
             }
 
             var bodyEx = '';
