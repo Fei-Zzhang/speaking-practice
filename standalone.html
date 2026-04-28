@@ -479,7 +479,16 @@
       // Node：登录、练习记录、教师布置/学生任务（Supabase）
       // 与 server/.env 里 PORT 一致（方案 B：3003，避免与占用 3000 的进程冲突）
       // Node：登录、练习记录、教师布置/学生任务（Express / Render）
-      const API_NODE = 'https://speaking-practice-1-4mkz.onrender.com';
+      // 可用地址栏参数覆盖后端：standalone.html?apiNode=https://你的服务.onrender.com（便于排查或多套部署）
+      function getApiNodeBase() {
+        try {
+          var u = new URL(window.location.href);
+          var q = (u.searchParams.get('apiNode') || '').trim();
+          if (q && /^https?:\/\//i.test(q)) return q.replace(/\/+$/, '');
+        } catch (e) {}
+        return 'https://speaking-practice-1-4mkz.onrender.com';
+      }
+      var API_NODE = getApiNodeBase();
       // Python：题库 docx、ASR+语法评测（Flask / Render）
       const API_PYTHON = 'https://speaking-practice-2-mmuf.onrender.com';
       const API_BASE = API_PYTHON;
@@ -2120,11 +2129,12 @@
       }
       /** 学习首页：云端趣味盖章 + 「我的班级」全部录音打卡日 → 合并连续天（同一日历日只计一次） */
       function prefetchStudentHomeMergedProgress() {
-        if (!API_NODE || !currentUser || PORTAL !== 'student') return;
+        var cu = getCurrentUser();
+        if (!API_NODE || !cu || PORTAL !== 'student') return;
         if (state.studentHomeCheckinPrefetchLoading) return;
         if (state.studentHomeCheckinYmdDict !== null && state.studentHomeFunYmdDictFromServer !== null) return;
         state.studentHomeCheckinPrefetchLoading = true;
-        var u = encodeURIComponent(currentUser);
+        var u = encodeURIComponent(cu);
         Promise.all([
           fetch(API_NODE + '/api/student/fun-practice-progress?username=' + u).then(function (r) {
             return r.json().catch(function () {
@@ -2357,7 +2367,8 @@
       }
       function loadStudentClassroomCheckinsForState(force) {
         var cid = (state.studentClassroomCheckinClassId || '').trim();
-        if (!cid || !currentUser) {
+        var cu = getCurrentUser();
+        if (!cid || !cu) {
           return;
         }
         if (!force && state.studentClassroomCheckinListForClass === cid && state.studentClassroomCheckinList !== null) {
@@ -2368,7 +2379,7 @@
         fetch(
           API_NODE +
             '/api/student/classroom-checkins?username=' +
-            encodeURIComponent(currentUser) +
+            encodeURIComponent(cu) +
             '&classroomId=' +
             encodeURIComponent(cid)
         )
@@ -3807,14 +3818,14 @@
                   }, 12000);
                 }
 
-                fetch(API_NODE + '/api/auth/login', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    username: name,
-                    password: pwd,
-                    expectedRole: PORTAL === 'teacher' ? 'teacher' : 'student',
-                    teacherCode: teacherCode
+              fetch(API_NODE + '/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  username: name,
+                  password: pwd,
+                  expectedRole: PORTAL === 'teacher' ? 'teacher' : 'student',
+                  teacherCode: teacherCode
                   }),
                   signal: controller ? controller.signal : undefined
                 })
@@ -3823,18 +3834,18 @@
                     return r.json().then(
                       function (data) {
                         if (data && data.ok) {
-                          setCurrentUser(data.username);
-                          setCurrentRole(data.role || (PORTAL === 'teacher' ? 'teacher' : 'student'));
+                    setCurrentUser(data.username);
+                    setCurrentRole(data.role || (PORTAL === 'teacher' ? 'teacher' : 'student'));
                           setSessionPassword(pwd);
-                          if (PORTAL === 'student') {
+                    if (PORTAL === 'student') {
                             setInterviewGradingApproved(!!data.interviewGradingApproved);
-                            state.view = 'list';
-                            persistSpeakingView('list');
-                          } else {
-                            state.view = 'hub';
-                            persistSpeakingView('hub');
-                          }
-                          render();
+                      state.view = 'list';
+                      persistSpeakingView('list');
+                    } else {
+                      state.view = 'hub';
+                      persistSpeakingView('hub');
+                    }
+                    render();
                         } else {
                           alert((data && data.message) || ('HTTP ' + r.status + ' 请求失败'));
                         }
@@ -3863,20 +3874,20 @@
                       btnLoginEl.textContent = oldBtnText;
                     }
                     const ok = confirm('无法连接 Node 后端。\n\nRender 免费实例可能正在休眠/唤醒，建议等待 20-60 秒后再登录一次。\n\n请确认：\n1) cd server && npm start\n2) http://localhost:3003/api/health\n\n是否离线登录？');
-                    if (ok) {
-                      setCurrentUser(name);
-                      setCurrentRole(PORTAL === 'teacher' ? 'teacher' : 'student');
-                      if (PORTAL === 'student') {
+                if (ok) {
+                  setCurrentUser(name);
+                  setCurrentRole(PORTAL === 'teacher' ? 'teacher' : 'student');
+                  if (PORTAL === 'student') {
                         setInterviewGradingApproved(false);
-                        state.view = 'list';
-                        persistSpeakingView('list');
-                      } else {
-                        state.view = 'hub';
-                        persistSpeakingView('hub');
-                      }
-                      render();
-                    }
-                  });
+                    state.view = 'list';
+                    persistSpeakingView('list');
+                  } else {
+                    state.view = 'hub';
+                    persistSpeakingView('hub');
+                  }
+                  render();
+                }
+              });
               };
 
               doAttempt();
@@ -4088,31 +4099,115 @@
                 return;
               }
               if (API_NODE) {
-                fetch(API_NODE + '/api/auth/login', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ username: name, password: pwd, expectedRole: 'student', teacherCode: '' })
-                })
-                  .then(function (r) {
-                    return r.json();
+                var btnLoginEl = document.getElementById('btnLogin');
+                var loginBtnHtml = btnLoginEl ? btnLoginEl.innerHTML : '';
+                var attempts = 0;
+                var maxAttempts = 3;
+                var loginTimeoutMs = 38000;
+
+                function parseLoginJsonFromText(r, text) {
+                  try {
+                    return text && String(text).length ? JSON.parse(text) : {};
+                  } catch (e) {
+                    var fileHint = '';
+                    try {
+                      if (String(window.location.protocol || '') === 'file:') {
+                        fileHint =
+                          '\n\n【常见原因】当前为本地文件（地址栏 file://），浏览器常会拦截访问 HTTPS 后端。\n请改为：在同一目录运行 python3 -m http.server 8080，用 http://localhost:8080/standalone.html 打开；或使用 GitHub Pages 等线上地址。\n亦可试试地址栏追加：?apiNode=' +
+                          encodeURIComponent(API_NODE);
+                      }
+                    } catch (_) {}
+                    throw new Error('服务器返回非 JSON（HTTP ' + r.status + '）。' + fileHint);
+                  }
+                }
+
+                function finishBusy() {
+                  if (btnLoginEl) {
+                    btnLoginEl.disabled = false;
+                    btnLoginEl.innerHTML = loginBtnHtml;
+                  }
+                }
+
+                function doAttempt() {
+                  attempts += 1;
+                  if (btnLoginEl) {
+                    btnLoginEl.disabled = true;
+                    btnLoginEl.textContent = '连接中…（第 ' + attempts + '/' + maxAttempts + ' 次）';
+                  }
+
+                  var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                  var timeoutId = null;
+                  if (controller) {
+                    timeoutId = setTimeout(function () {
+                      try {
+                        controller.abort();
+                      } catch (_) {}
+                    }, loginTimeoutMs);
+                  }
+
+                  fetch(API_NODE + '/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      username: name,
+                      password: pwd,
+                      expectedRole: 'student',
+                      teacherCode: ''
+                    }),
+                    signal: controller ? controller.signal : undefined
                   })
-                  .then(function (data) {
-                    if (data && data.ok) {
-                      setCurrentUser(data.username);
-                      setCurrentRole('student');
-                      setSessionPassword(pwd);
-                      setInterviewGradingApproved(!!data.interviewGradingApproved);
-                      state.view = 'list';
-                      state.studentNav = 'home';
-                      persistSpeakingView('list');
-                      render();
-                    } else {
-                      alert((data && data.message) || '登录失败');
-                    }
-                  })
-                  .catch(function () {
-                    alert('无法连接后端');
-                  });
+                    .then(function (r) {
+                      if (timeoutId) clearTimeout(timeoutId);
+                      return r.text().then(function (text) {
+                        var data = parseLoginJsonFromText(r, text);
+                        return { httpOk: r.ok, status: r.status, data: data };
+                      });
+                    })
+                    .then(function (pack) {
+                      var data = pack.data;
+                      if (data && data.ok) {
+                        setCurrentUser(data.username);
+                        setCurrentRole('student');
+                        setSessionPassword(pwd);
+                        setInterviewGradingApproved(!!data.interviewGradingApproved);
+                        state.view = 'list';
+                        state.studentNav = 'home';
+                        persistSpeakingView('list');
+                        finishBusy();
+                        render();
+                      } else {
+                        finishBusy();
+                        alert((data && data.message) || '登录失败');
+                      }
+                    })
+                    .catch(function (err) {
+                      if (timeoutId) clearTimeout(timeoutId);
+                      var msg = err && err.message ? String(err.message) : String(err || '');
+                      var nameErr = err && err.name ? String(err.name) : '';
+                      var badJson = /^服务器返回非 JSON/.test(msg);
+                      var aborted = nameErr === 'AbortError' || /aborted/i.test(msg);
+                      var maybeNetwork =
+                        !badJson &&
+                        (aborted ||
+                          /Failed to fetch|NetworkError|network|Load failed|ECONN/i.test(msg));
+
+                      if (maybeNetwork && attempts < maxAttempts) {
+                        setTimeout(doAttempt, 2800);
+                        return;
+                      }
+
+                      finishBusy();
+                      var tail =
+                        '\n\n当前接口地址：' +
+                        API_NODE +
+                        '\n若后端正常仍失败：①勿用 file:// 打开页面；②尝试地址栏 ?apiNode=' +
+                        encodeURIComponent(API_NODE || '') +
+                        '；③关闭广告拦截 / 换浏览器试 Render。';
+                      alert((badJson ? '' : '无法连接后端：') + (msg || '请求失败') + tail);
+                    });
+                }
+
+                doAttempt();
                 return;
               }
               setCurrentUser(name);
@@ -6352,21 +6447,21 @@
                       render();
 
                       Promise.resolve().then(function () {
-                        if (_batch) {
-                          state.studentPendingGrading = (state.studentPendingGrading || 0) + 1;
-                        }
+                          if (_batch) {
+                            state.studentPendingGrading = (state.studentPendingGrading || 0) + 1;
+                          }
                         var qs = new URLSearchParams({
-                          username: getStudentTaskName(),
-                          assignmentId: state.studentAssignmentId,
+                              username: getStudentTaskName(),
+                              assignmentId: state.studentAssignmentId,
                           questionId: capUqQid || capQid,
-                          refText: realCurrentRefText || ''
+                              refText: realCurrentRefText || ''
                         });
                         return fetch(API_NODE + '/api/student/submit-audio?' + qs.toString(), {
                           method: 'POST',
                           headers: { 'Content-Type': 'audio/webm' },
                           body: blob
-                        });
-                      })
+                          });
+                        })
                         .then(function (r) {
                           return r.json().catch(function () { return {}; }).then(function (data) {
                             return { okHttp: r.ok, status: r.status, data: data };
@@ -6547,7 +6642,7 @@
                 state.mainChoice = 'studentBankPick';
                 state.studentNav = 'bank';
               } else {
-                state.mainChoice = null;
+              state.mainChoice = null;
               }
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
@@ -6604,7 +6699,7 @@
                 state.mainChoice = 'studentBankPick';
                 state.studentNav = 'bank';
               } else {
-                state.mainChoice = null;
+              state.mainChoice = null;
               }
               state.realTestCategoryId = null;
               state.realTestMode = 'topic';
@@ -6901,18 +6996,18 @@
                         state.realTestLoading = false;
                         if (errMsg) {
                           state.realTestError = errMsg;
-                          state.realTestResult = null;
+                            state.realTestResult = null;
                         } else if (data && data.ok === false) {
                           state.realTestError = (data.message || data.error) || '评测失败';
                           state.realTestResult = null;
                         } else if (data && (data.ok === true || data.transcript != null || typeof data.overall === 'number')) {
-                          state.realTestError = '';
-                          state.realTestResult = data;
+                            state.realTestError = '';
+                            state.realTestResult = data;
                         } else {
                           state.realTestError = (data && (data.error || data.message)) ? (data.error || data.message) : '口语评测失败，请稍后重试。';
                           state.realTestResult = null;
-                        }
-                        render();
+                          }
+                          render();
                       }
 
                       // Interview 批改：Python TokenHub（/api/interview-correct 或 /api/upload-audio-correct），不再用 asr-eval/Ollama
