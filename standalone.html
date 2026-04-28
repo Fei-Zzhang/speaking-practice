@@ -360,13 +360,11 @@
         '</ol>';
 
       var HELP_HTML_PRACTICE =
-        '<div class="help-tip-section">练习</div>' +
+        '<div class="help-tip-section">趣味练习</div>' +
         '<ol class="help-tip-ol">' +
-        '<li>1️⃣ 顶部切换标签，打开对应纸质材料；</li>' +
-        '<li>2️⃣ 在「大闯关」中逐题作答；</li>' +
-        '<li>3️⃣ 答错可重试，通关后查看得分；</li>' +
-        '<li>4️⃣ 正文区域可上下滚动阅读；</li>' +
-        '<li>5️⃣ 需要留存时可自行截图或打印页面。</li>' +
+        '<li>先打开「趣味首页」，进入 Example（每日解锁）、Reasoning（占位）或 Grammar（原大闯关）；</li>' +
+        '<li>Example 读取同目录 example练习.text，按 ## Day 1… 闯关；通关打卡后解锁下一天并盖章日历；登录且服务端已建表时可云端同步进度；</li>' +
+        '<li>Grammar 仍为语法 / 话题 / 措辞选择题闯关。</li>' +
         '</ol>';
 
       function getStudentHelpKind() {
@@ -579,6 +577,33 @@
         return { stem: q.stem, options: opts, answerIndex: newIdx, n: q.n };
       }
 
+      /** 趣味 Example：按 ## Day N 拆分块，再解析级别1选择题 */
+      function parseExamplePracticeDaySections(fullText) {
+        var text = String(fullText || '');
+        var re = /^##\s*Day\s+(\d+)/gim;
+        var chunks = [];
+        var m;
+        while ((m = re.exec(text)) !== null) {
+          chunks.push({ num: parseInt(m[1], 10), startIdx: m.index, headerLen: m[0].length });
+        }
+        if (!chunks.length) {
+          var qs0 = parseGrammarLevel1Mcq(text).map(shuffleMcqQuestion);
+          return qs0.length ? [{ dayNum: 1, questions: qs0 }] : [];
+        }
+        var out = [];
+        for (var i = 0; i < chunks.length; i++) {
+          var bodyStart = chunks[i].startIdx + chunks[i].headerLen;
+          var bodyEnd = i + 1 < chunks.length ? chunks[i + 1].startIdx : text.length;
+          var body = text.slice(bodyStart, bodyEnd).trim();
+          var qs = parseGrammarLevel1Mcq(body).map(shuffleMcqQuestion);
+          out.push({ dayNum: chunks[i].num, questions: qs });
+        }
+        out.sort(function (a, b) {
+          return a.dayNum - b.dayNum;
+        });
+        return out;
+      }
+
       function buildStudentMaterialMcqList(tabId, rawText, grammarFallback) {
         if (tabId === 'grammar') return parseGrammarLevel1Mcq(rawText).map(shuffleMcqQuestion);
         if (tabId === 'topic') return parseTopicWordBankMcq(rawText).map(shuffleMcqQuestion);
@@ -647,6 +672,19 @@
         studentMaterialError: '',
         /** 练习材料闯关：{ tab, list, idx, score, answered, pick } */
         studentMaterialQuiz: null,
+        /** 趣味练习分区：hub | example | reasoning | legacy（grammar/话题等原大闯关） */
+        studentPracticeSection: 'hub',
+        studentFunExampleRaw: null,
+        studentFunExampleLoading: false,
+        studentFunExampleErr: '',
+        studentFunParsedDays: null,
+        studentFunPracticeProgress: null,
+        studentFunQuiz: null,
+        studentFunCelebrationUntil: 0,
+        studentFunCelebrationYmd: null,
+        studentFunCalY: null,
+        studentFunCalM: null,
+        studentFunForceSyncProgress: false,
         mockPart: null,
         sectionId: null,
         mcqAnswers: {}, mcqScore: 0, transcript: '', editCount: 0, isEditing: false, finalText: '', phase: 'idle', secondsLeft: SPEAKING_DURATION,
@@ -1221,6 +1259,26 @@
 
       function getCurrentUser() {
         try { return sessionStorage.getItem(AUTH_KEY); } catch (_) { return null; }
+      }
+      function funPracticeStorageKey() {
+        var u = getCurrentUser();
+        return 'speaking_fun_practice_' + (u || 'guest');
+      }
+      function loadFunPracticeLocal() {
+        try {
+          var j = JSON.parse(localStorage.getItem(funPracticeStorageKey()) || '{}');
+          return {
+            nextDay: typeof j.nextDay === 'number' && j.nextDay >= 1 ? j.nextDay : 1,
+            stampDates: Array.isArray(j.stampDates) ? j.stampDates : [],
+          };
+        } catch (_) {
+          return { nextDay: 1, stampDates: [] };
+        }
+      }
+      function saveFunPracticeLocal(p) {
+        try {
+          localStorage.setItem(funPracticeStorageKey(), JSON.stringify(p));
+        } catch (_) {}
       }
       function setCurrentUser(name) {
         try { sessionStorage.setItem(AUTH_KEY, name); } catch (_) {}
@@ -1826,6 +1884,22 @@
           });
       }
 
+      function buildFunPracticeCalendarHtml(st) {
+        var prog = st.studentFunPracticeProgress || loadFunPracticeLocal();
+        var stampList = prog && Array.isArray(prog.stampDates) ? prog.stampDates : [];
+        var fakeState = {
+          studentClassroomCalY: st.studentFunCalY,
+          studentClassroomCalM: st.studentFunCalM,
+          studentClassroomCheckinList: stampList.map(function (ymd) {
+            return { submitted_at: String(ymd || '').slice(0, 10) + 'T12:00:00.000Z' };
+          }),
+          studentClassroomCalendarPickYmd: null,
+          studentClassroomStampYmd: st.studentFunCelebrationYmd,
+          studentClassroomFireworksUntil: st.studentFunCelebrationUntil || 0,
+        };
+        return buildClassroomMonthCalendarHtml(fakeState);
+      }
+
       function evalDataLooksComplete(ed) {
         if (!ed || typeof ed !== 'object') return false;
         if (ed.multi && Array.isArray(ed.files) && ed.files.length) {
@@ -2052,8 +2126,392 @@
 
         // 学生端 · 练习材料（与 standalone 同目录的 .text；登录与否均可）
         if (PORTAL === 'student' && state.mainChoice === 'studentMaterial') {
+          try {
+            var _spSec = sessionStorage.getItem('speaking_studentPracticeSection');
+            if (_spSec === 'hub' || _spSec === 'example' || _spSec === 'reasoning' || _spSec === 'legacy') {
+              state.studentPracticeSection = _spSec;
+            }
+          } catch (_se) {}
+          if (
+            !state.studentPracticeSection ||
+            ['hub', 'example', 'reasoning', 'legacy'].indexOf(state.studentPracticeSection) < 0
+          ) {
+            state.studentPracticeSection = 'hub';
+          }
+          function persistPracticeSection(sp) {
+            state.studentPracticeSection = sp;
+            try {
+              sessionStorage.setItem('speaking_studentPracticeSection', sp);
+            } catch (_se2) {}
+          }
+          var secPr = state.studentPracticeSection;
+
+          if (secPr === 'hub') {
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card"><h2 style="margin:0 0 0.75rem">练习 · 趣味</h2>' +
+              '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 1rem">从 Example 开始：每日一关，通关「打卡解锁」后解锁下一关并记入日历盖章；登录可将进度同步至云端。</p>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center">' +
+              '<button type="button" class="primary" data-hub-go="example">Example 练习</button>' +
+              '<button type="button" data-hub-go="reasoning">Reasoning</button>' +
+              '<button type="button" data-hub-go="legacy">Grammar 练习</button>' +
+              '</div>' +
+              '<p style="color:var(--muted);font-size:0.82rem;margin:1rem 0 0">Grammar 为原「大闯关」语法 / 话题 / 措辞材料；Reasoning 后续补充。</p>' +
+              '</div>';
+            bindStudentTopNav(root);
+            root.querySelectorAll('[data-hub-go]').forEach(function (btn) {
+              btn.onclick = function () {
+                var k = btn.getAttribute('data-hub-go');
+                if (k === 'example') state.studentFunForceSyncProgress = true;
+                persistPracticeSection(k);
+                render();
+              };
+            });
+            return;
+          }
+
+          if (secPr === 'reasoning') {
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card"><h2 style="margin:0 0 0.75rem">Reasoning · 敬请期待</h2>' +
+              '<p style="color:var(--muted)">推理类趣味练习正在设计中。</p>' +
+              '<button type="button" style="margin-top:1rem" data-practice-hub-back>← 返回趣味首页</button></div>';
+            bindStudentTopNav(root);
+            root.querySelector('[data-practice-hub-back]').onclick = function () {
+              persistPracticeSection('hub');
+              render();
+            };
+            return;
+          }
+
+          if (secPr === 'example') {
+            if (state.studentFunCalY == null || state.studentFunCalM == null) {
+              var _tn = new Date();
+              state.studentFunCalY = _tn.getFullYear();
+              state.studentFunCalM = _tn.getMonth();
+            }
+            if (!state.studentFunPracticeProgress) {
+              state.studentFunPracticeProgress = loadFunPracticeLocal();
+            }
+            var uEx = getCurrentUser();
+            if (state.studentFunForceSyncProgress && API_NODE && uEx) {
+              state.studentFunForceSyncProgress = false;
+              fetch(API_NODE + '/api/student/fun-practice-progress?username=' + encodeURIComponent(uEx))
+                .then(function (r) {
+                  return r.json().catch(function () {
+                    return {};
+                  });
+                })
+                .then(function (data) {
+                  if (data && data.ok) {
+                    state.studentFunPracticeProgress = {
+                      nextDay: data.nextDay,
+                      stampDates: data.stampDates || [],
+                    };
+                    saveFunPracticeLocal(state.studentFunPracticeProgress);
+                    render();
+                  }
+                })
+                .catch(function () {});
+            }
+
+            if (state.studentFunExampleRaw == null && !state.studentFunExampleLoading && !state.studentFunExampleErr) {
+              state.studentFunExampleLoading = true;
+              fetch(resolveMaterialFileUrl('example练习.text'), { cache: 'default' })
+                .then(function (r) {
+                  if (!r.ok) throw new Error('HTTP ' + r.status);
+                  return r.text();
+                })
+                .then(function (text) {
+                  state.studentFunExampleRaw = text;
+                  state.studentFunParsedDays = parseExamplePracticeDaySections(text);
+                  state.studentFunExampleLoading = false;
+                  state.studentFunExampleErr = '';
+                  render();
+                })
+                .catch(function () {
+                  state.studentFunExampleLoading = false;
+                  state.studentFunExampleErr = '无法加载 example练习.text（请与 standalone 同目录部署）';
+                  render();
+                });
+            }
+
+            var bodyEx = '';
+            var progEx = state.studentFunPracticeProgress || loadFunPracticeLocal();
+            var nextD = progEx.nextDay;
+            var parsedEx = state.studentFunParsedDays;
+
+            if (state.studentFunExampleLoading) {
+              bodyEx = '<p style="color:var(--muted)">正在加载 example练习.text …</p>';
+            } else if (state.studentFunExampleErr) {
+              bodyEx = '<p style="color:var(--wrong)">' + escapeHtml(state.studentFunExampleErr) + '</p>';
+            } else if (!parsedEx || !parsedEx.length) {
+              bodyEx =
+                '<p style="color:var(--muted)">未能解析 Day。请在 example练习.text 中使用 ## Day 1 / ## Day 2 与「级别1：选择题」代码块。</p>';
+            } else {
+              var maxDayNum = Math.max.apply(
+                null,
+                parsedEx.map(function (d) {
+                  return d.dayNum;
+                })
+              );
+              var dayObjEx = null;
+              var pi;
+              for (pi = 0; pi < parsedEx.length; pi++) {
+                if (parsedEx[pi].dayNum === nextD) {
+                  dayObjEx = parsedEx[pi];
+                  break;
+                }
+              }
+              var calHtmlEx = buildFunPracticeCalendarHtml(state);
+              var calNavHint =
+                '<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border)">' +
+                '<p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.35rem">练习打卡日历 · 有声之日显示「印」，通关当日有礼花</p>' +
+                calHtmlEx +
+                '</div>';
+
+              if (!dayObjEx) {
+                if (nextD > maxDayNum) {
+                  bodyEx =
+                    '<p style="color:var(--correct);margin:0 0 0.75rem"><strong>已完成 Example 全部天数。</strong></p>' +
+                    '<p style="color:var(--muted);font-size:0.9rem">已盖章日期：' +
+                    escapeHtml((progEx.stampDates || []).join('、') || '无') +
+                    '</p>' +
+                    calNavHint;
+                } else {
+                  bodyEx =
+                    '<p style="color:var(--wrong)">材料中缺少 Day ' +
+                    nextD +
+                    '，请在 example练习.text 中补充。</p>' +
+                    calNavHint;
+                }
+              } else {
+                var qlistEx = dayObjEx.questions;
+                if (!qlistEx.length) {
+                  bodyEx =
+                    '<p style="color:var(--muted)">第 ' +
+                    nextD +
+                    ' 天暂无选择题。</p>' +
+                    calNavHint;
+                } else {
+                  var fq = state.studentFunQuiz;
+                  if (
+                    !fq ||
+                    fq.dayNum !== nextD ||
+                    !fq.list ||
+                    fq.list.length !== qlistEx.length
+                  ) {
+                    state.studentFunQuiz = {
+                      dayNum: nextD,
+                      list: qlistEx,
+                      idx: 0,
+                      score: 0,
+                      answered: false,
+                      pick: null,
+                    };
+                    fq = state.studentFunQuiz;
+                  }
+                  var cq = fq.list[fq.idx];
+                  var total = fq.list.length;
+                  var optsHtmlEx = cq.options
+                    .map(function (op, oi) {
+                      var cls = 'material-game-opt';
+                      if (fq.answered) {
+                        if (oi === cq.answerIndex) cls += ' correct';
+                        else if (fq.pick === oi) cls += ' wrong';
+                      } else if (fq.pick === oi) cls += ' picked';
+                      return (
+                        '<button type="button" class="' +
+                        cls +
+                        '" data-fun-opt="' +
+                        oi +
+                        '">' +
+                        escapeHtml(String.fromCharCode(65 + oi)) +
+                        '. ' +
+                        escapeHtml(op) +
+                        '</button>'
+                      );
+                    })
+                    .join('');
+                  var btnRowEx = '';
+                  if (!fq.answered) {
+                    btnRowEx =
+                      '<button type="button" class="primary" id="btnFunSubmit" ' +
+                      (fq.pick == null ? 'disabled' : '') +
+                      '>提交本题</button>';
+                  } else if (fq.idx + 1 < total) {
+                    btnRowEx = '<button type="button" class="primary" id="btnFunNext">下一题</button>';
+                  } else {
+                    btnRowEx =
+                      '<p style="color:var(--correct);margin:0 0 0.75rem"><strong>今日关卡已答完</strong> 得分 ' +
+                      fq.score +
+                      ' / ' +
+                      total +
+                      '</p>' +
+                      '<button type="button" class="primary" id="btnFunStamp">打卡解锁下一天 · 日历盖章</button>';
+                  }
+                  bodyEx =
+                    '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 0.75rem">当前解锁：<strong>第 ' +
+                    nextD +
+                    ' 天</strong> · 登录后在服务端同步进度（须已在数据库创建 student_fun_practice 表）</p>' +
+                    '<div class="material-game-head"><span><strong>Example</strong> · 第 ' +
+                    (fq.idx + 1) +
+                    ' / ' +
+                    total +
+                    ' 题</span><span style="color:var(--muted)">得分 ' +
+                    fq.score +
+                    '</span></div>' +
+                    '<div class="material-game-stem">' +
+                    escapeHtml(cq.stem) +
+                    '</div>' +
+                    optsHtmlEx +
+                    '<div style="margin-top:1rem">' +
+                    btnRowEx +
+                    '</div>' +
+                    calNavHint;
+                }
+              }
+            }
+
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card"><p style="margin:0 0 0.75rem"><button type="button" data-practice-hub-back-ex>← 趣味首页</button></p>' +
+              '<h2 style="margin:0 0 0.75rem">趣味 · Example（每日解锁）</h2>' +
+              bodyEx +
+              '</div>';
+            bindStudentTopNav(root);
+            root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
+              persistPracticeSection('hub');
+              render();
+            };
+            root.querySelectorAll('[data-fun-opt]').forEach(function (ob) {
+              ob.onclick = function () {
+                var qx = state.studentFunQuiz;
+                if (!qx || qx.answered) return;
+                qx.pick = parseInt(ob.getAttribute('data-fun-opt'), 10);
+                render();
+              };
+            });
+            var subF = document.getElementById('btnFunSubmit');
+            if (subF) {
+              subF.onclick = function () {
+                var qx = state.studentFunQuiz;
+                if (!qx || qx.pick == null || qx.answered) return;
+                var cur = qx.list[qx.idx];
+                qx.answered = true;
+                if (qx.pick === cur.answerIndex) qx.score++;
+                render();
+              };
+            }
+            var nxF = document.getElementById('btnFunNext');
+            if (nxF) {
+              nxF.onclick = function () {
+                var qx = state.studentFunQuiz;
+                if (!qx) return;
+                qx.idx++;
+                qx.answered = false;
+                qx.pick = null;
+                render();
+              };
+            }
+            var stampB = document.getElementById('btnFunStamp');
+            if (stampB) {
+              stampB.onclick = function () {
+                var qx = state.studentFunQuiz;
+                if (!qx) return;
+                var dayDone = qx.dayNum;
+                var ymdLoc = ymdFromDateObj(new Date());
+                function finishAdvance(pr) {
+                  state.studentFunPracticeProgress = pr;
+                  saveFunPracticeLocal(pr);
+                  state.studentFunQuiz = null;
+                  state.studentFunCelebrationUntil = Date.now() + 5200;
+                  state.studentFunCelebrationYmd = ymdLoc;
+                  setTimeout(function () {
+                    state.studentFunCelebrationUntil = 0;
+                    render();
+                  }, 5400);
+                  render();
+                }
+                function localOnly() {
+                  var pr = loadFunPracticeLocal();
+                  if (pr.nextDay !== dayDone) return;
+                  pr.nextDay = dayDone + 1;
+                  if (pr.stampDates.indexOf(ymdLoc) < 0) pr.stampDates.push(ymdLoc);
+                  finishAdvance(pr);
+                }
+                var pwdF = getSessionPassword();
+                var uStamp = getCurrentUser();
+                if (API_NODE && uStamp && pwdF) {
+                  fetch(API_NODE + '/api/student/fun-practice-complete-day', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      username: uStamp,
+                      password: pwdF,
+                      completedDay: dayDone,
+                      completedDateYmd: ymdLoc,
+                    }),
+                  })
+                    .then(function (r) {
+                      return r.json().catch(function () {
+                        return {};
+                      });
+                    })
+                    .then(function (data) {
+                      if (data && data.ok) {
+                        finishAdvance({
+                          nextDay: data.nextDay,
+                          stampDates: data.stampDates || [],
+                        });
+                      } else {
+                        localOnly();
+                      }
+                    })
+                    .catch(function () {
+                      localOnly();
+                    });
+                } else {
+                  localOnly();
+                }
+              };
+            }
+            root.querySelectorAll('[data-cal-nav]').forEach(function (b) {
+              b.onclick = function () {
+                var d = b.getAttribute('data-cal-nav');
+                var y = state.studentFunCalY;
+                var m0 = state.studentFunCalM;
+                if (y == null || m0 == null) {
+                  var t2 = new Date();
+                  y = t2.getFullYear();
+                  m0 = t2.getMonth();
+                }
+                if (d === 'prev') {
+                  if (m0 <= 0) {
+                    y--;
+                    m0 = 11;
+                  } else {
+                    m0--;
+                  }
+                } else {
+                  if (m0 >= 11) {
+                    y++;
+                    m0 = 0;
+                  } else {
+                    m0++;
+                  }
+                }
+                state.studentFunCalY = y;
+                state.studentFunCalM = m0;
+                render();
+              };
+            });
+            return;
+          }
+
           var navMat = studentTopNavHtml();
           var tabMat = state.studentMaterialTab || 'grammar';
+
           var mfMat =
             STUDENT_MATERIAL_FILES.find(function (x) {
               return x.id === tabMat;
@@ -2191,11 +2649,19 @@
           }
           root.innerHTML =
             navMat +
-            '<div class="card"><h2 style="margin:0 0 0.75rem">练习 · 大闯关</h2>' +
+            '<div class="card"><p style="margin:0 0 0.75rem"><button type="button" data-practice-hub-back-lg>← 趣味首页</button></p>' +
+            '<h2 style="margin:0 0 0.75rem">Grammar · 大闯关</h2>' +
             tabsHtmlMat +
             bodyMat +
             '</div>';
           bindStudentTopNav(root);
+          var bhLg = root.querySelector('[data-practice-hub-back-lg]');
+          if (bhLg) {
+            bhLg.onclick = function () {
+              persistPracticeSection('hub');
+              render();
+            };
+          }
           root.querySelectorAll('[data-mat-tab]').forEach(function (bt) {
             bt.onclick = function () {
               state.studentMaterialTab = bt.getAttribute('data-mat-tab');

@@ -1214,6 +1214,99 @@ app.get('/api/student/classroom-checkins', async (req, res) => {
   }
 });
 
+/** 学生 · 趣味 Example 每日进度（练习页打卡日历） */
+app.get('/api/student/fun-practice-progress', async (req, res) => {
+  try {
+    const uname = (req.query.username || '').trim();
+    if (!uname) return res.status(400).json({ ok: false, message: '需要 username' });
+    if (!(await userHasRole(uname, 'student'))) {
+      return res.status(403).json({ ok: false, message: '仅学生可查' });
+    }
+    const { data: row, error } = await supabase
+      .from('student_fun_practice')
+      .select('next_day, stamp_dates')
+      .eq('username', uname)
+      .maybeSingle();
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ ok: false, message: '读取失败' });
+    }
+    const nextDay = row && typeof row.next_day === 'number' ? row.next_day : 1;
+    const stampDates =
+      row && row.stamp_dates != null && Array.isArray(row.stamp_dates) ? row.stamp_dates : [];
+    res.json({ ok: true, nextDay, stampDates });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
+/** 完成当日 Example 关卡（校验顺序；盖章日期由前端传本地 YYYY-MM-DD） */
+app.post('/api/student/fun-practice-complete-day', async (req, res) => {
+  try {
+    const { username, password, completedDay, completedDateYmd } = req.body || {};
+    const uname = String(username || '').trim();
+    const pwd = String(password || '');
+    const day = parseInt(completedDay, 10);
+    const ymd = String(completedDateYmd || '').trim().slice(0, 10);
+    if (!uname || !pwd || !Number.isFinite(day) || day < 1) {
+      return res.status(400).json({ ok: false, message: '需要账号、密码与 completedDay' });
+    }
+    const { data: user, error: ue } = await supabase
+      .from('users')
+      .select('username, password, role')
+      .eq('username', uname)
+      .maybeSingle();
+    if (ue || !user || user.password !== pwd) {
+      return res.status(401).json({ ok: false, message: '账号或密码错误' });
+    }
+    if ((user.role || 'student') !== 'student') {
+      return res.status(403).json({ ok: false, message: '仅学生可同步进度' });
+    }
+    const { data: existing, error: fe } = await supabase
+      .from('student_fun_practice')
+      .select('next_day, stamp_dates')
+      .eq('username', uname)
+      .maybeSingle();
+    if (fe) {
+      console.error(fe);
+      return res.status(500).json({ ok: false, message: '读取进度失败' });
+    }
+    const expected = existing && typeof existing.next_day === 'number' ? existing.next_day : 1;
+    if (day !== expected) {
+      return res.status(409).json({
+        ok: false,
+        message: `当前应完成第 ${expected} 天，无法提交第 ${day} 天`,
+      });
+    }
+    const stamps =
+      existing && existing.stamp_dates != null && Array.isArray(existing.stamp_dates)
+        ? [...existing.stamp_dates]
+        : [];
+    if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd) && !stamps.includes(ymd)) {
+      stamps.push(ymd);
+    }
+    const nextDayOut = day + 1;
+    const payload = {
+      username: uname,
+      next_day: nextDayOut,
+      stamp_dates: stamps,
+      updated_at: new Date().toISOString(),
+    };
+    const { error: upErr } = await supabase.from('student_fun_practice').upsert(payload, {
+      onConflict: 'username',
+    });
+    if (upErr) {
+      console.error(upErr);
+      return res.status(500).json({ ok: false, message: '保存失败' });
+    }
+    res.json({ ok: true, nextDay: nextDayOut, stampDates: stamps });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
 // ---------- 教师：布置任务 ----------
 app.get('/api/teacher/assignments', async (req, res) => {
   try {
