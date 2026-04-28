@@ -1207,12 +1207,73 @@ app.get('/api/student/classroom-checkins', async (req, res) => {
       console.error(error);
       return res.status(500).json({ ok: false, message: '查询失败' });
     }
-    res.json({ ok: true, list: rows || [] });
+      res.json({ ok: true, list: rows || [] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, message: '查询失败' });
   }
 });
+
+/** 连续打卡天数（与 standalone 合并日历日逻辑对齐：趣味印章日 ∪ 班级录音日） */
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+function dateYmdFromDateJs(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function dateYmdLocalFromIso(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return dateYmdFromDateJs(d);
+}
+function streakDaysFromYmdSetDict(setObj) {
+  const set = setObj || {};
+  let streak = 0;
+  let d = new Date();
+  const keyFromDate = (dt) => dateYmdFromDateJs(dt);
+  if (!set[keyFromDate(d)]) {
+    d.setDate(d.getDate() - 1);
+  }
+  for (let i = 0; i < 400; i++) {
+    const key = keyFromDate(d);
+    if (set[key]) {
+      streak++;
+      d.setDate(d.getDate() - 1);
+    } else break;
+  }
+  return streak;
+}
+async function mergedCheckinYmdDictForStudent(username) {
+  const merged = {};
+  const { data: fpRow } = await supabase
+    .from('student_fun_practice')
+    .select('stamp_dates')
+    .eq('username', username)
+    .maybeSingle();
+  const stamps =
+    fpRow && fpRow.stamp_dates != null && Array.isArray(fpRow.stamp_dates) ? fpRow.stamp_dates : [];
+  stamps.forEach((s) => {
+    const k = String(s || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(k)) merged[k] = true;
+  });
+  const { data: members } = await supabase
+    .from('classroom_members')
+    .select('classroom_id')
+    .eq('student_username', username);
+  for (const m of members || []) {
+    const cid = m.classroom_id;
+    const { data: rows } = await supabase
+      .from('classroom_checkins')
+      .select('submitted_at')
+      .eq('classroom_id', cid)
+      .eq('student_username', username);
+    for (const row of rows || []) {
+      const y = dateYmdLocalFromIso(row.submitted_at);
+      if (y) merged[y] = true;
+    }
+  }
+  return merged;
+}
 
 /** 学生 · 趣味 Example 每日进度（练习页打卡日历） */
 app.get('/api/student/fun-practice-progress', async (req, res) => {
@@ -1224,7 +1285,7 @@ app.get('/api/student/fun-practice-progress', async (req, res) => {
     }
     const { data: row, error } = await supabase
       .from('student_fun_practice')
-      .select('next_day, stamp_dates')
+      .select('next_day, stamp_dates, badges')
       .eq('username', uname)
       .maybeSingle();
     if (error) {
@@ -1234,7 +1295,82 @@ app.get('/api/student/fun-practice-progress', async (req, res) => {
     const nextDay = row && typeof row.next_day === 'number' ? row.next_day : 1;
     const stampDates =
       row && row.stamp_dates != null && Array.isArray(row.stamp_dates) ? row.stamp_dates : [];
-    res.json({ ok: true, nextDay, stampDates });
+    const badges = row && row.badges != null && Array.isArray(row.badges) ? row.badges : [];
+    res.json({ ok: true, nextDay, stampDates, badges });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, message: '服务器错误' });
+  }
+});
+
+/** 学生 · 领取「持续练习勋章」（连续打卡满 10 天：趣味 Example + 班级录音合并）；幂等 */
+app.post('/api/student/claim-streak-badge', async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    const uname = String(username || '').trim();
+    const pwd = String(password || '');
+    if (!uname || !pwd) return res.status(400).json({ ok: false, message: '需要账号与密码' });
+    const { data: user, error: ue } = await supabase
+      .from('users')
+      .select('username, password, role')
+      .eq('username', uname)
+      .maybeSingle();
+    if (ue || !user || user.password !== pwd) {
+      return res.status(401).json({ ok: false, message: '账号或密码错误' });
+    }
+    if ((user.role || 'student') !== 'student') {
+      return res.status(403).json({ ok: false, message: '仅学生可领取' });
+    }
+    const { data: row, error: fe } = await supabase
+      .from('student_fun_practice')
+      .select('next_day, stamp_dates, badges')
+      .eq('username', uname)
+      .maybeSingle();
+    if (fe) {
+      console.error(fe);
+      return res.status(500).json({ ok: false, message: '读取进度失败' });
+    }
+    let badges = row && row.badges != null && Array.isArray(row.badges) ? [...row.badges] : [];
+    const hasStreak = badges.some((b) => b && b.id === 'streak_10');
+    if (hasStreak) {
+      return res.json({ ok: true, badges, newlyAwarded: false });
+    }
+    const merged = await mergedCheckinYmdDictForStudent(uname);
+    const streak = streakDaysFromYmdSetDict(merged);
+    if (streak < 10) {
+      return res.json({
+        ok: true,
+        badges,
+        newlyAwarded: false,
+        streakDays: streak,
+        message: '当前连续打卡未满 10 天（趣味 Example + 班级录音合并统计）',
+      });
+    }
+    const entry = {
+      id: 'streak_10',
+      label: '持续练习勋章',
+      streakDays: streak,
+      awardedAt: new Date().toISOString(),
+    };
+    badges = badges.concat(entry);
+    const nextDay = row && typeof row.next_day === 'number' ? row.next_day : 1;
+    const stampDates =
+      row && row.stamp_dates != null && Array.isArray(row.stamp_dates) ? row.stamp_dates : [];
+    const payload = {
+      username: uname,
+      next_day: nextDay,
+      stamp_dates: stampDates,
+      badges,
+      updated_at: new Date().toISOString(),
+    };
+    const { error: upErr } = await supabase.from('student_fun_practice').upsert(payload, {
+      onConflict: 'username',
+    });
+    if (upErr) {
+      console.error(upErr);
+      return res.status(500).json({ ok: false, message: '保存勋章失败（若尚未执行 SQL，请运行 server/supabase-streak-badge.sql）' });
+    }
+    return res.json({ ok: true, badges, newlyAwarded: true, streakDays: streak });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, message: '服务器错误' });
@@ -1265,7 +1401,7 @@ app.post('/api/student/fun-practice-complete-day', async (req, res) => {
     }
     const { data: existing, error: fe } = await supabase
       .from('student_fun_practice')
-      .select('next_day, stamp_dates')
+      .select('next_day, stamp_dates, badges')
       .eq('username', uname)
       .maybeSingle();
     if (fe) {
@@ -1287,10 +1423,13 @@ app.post('/api/student/fun-practice-complete-day', async (req, res) => {
       stamps.push(ymd);
     }
     const nextDayOut = day + 1;
+    const existingBadges =
+      existing && existing.badges != null && Array.isArray(existing.badges) ? [...existing.badges] : [];
     const payload = {
       username: uname,
       next_day: nextDayOut,
       stamp_dates: stamps,
+      badges: existingBadges,
       updated_at: new Date().toISOString(),
     };
     const { error: upErr } = await supabase.from('student_fun_practice').upsert(payload, {

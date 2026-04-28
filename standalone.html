@@ -126,6 +126,20 @@
       box-shadow: 0 4px 24px rgba(99,102,241,0.1);
     }
     .stu-home-hero h1 { margin: 0 0 0.5rem; font-size: clamp(1.25rem, 4vw, 1.65rem); font-weight: 700; color: var(--text); }
+    .stu-home-badge-earned {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.65rem;
+      padding: 0.45rem 0.75rem;
+      border-radius: 12px;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.28);
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+    .stu-home-badge-earned .stu-home-badge-ico { color: var(--accent); font-size: 1.2rem; line-height: 1; }
     .stu-home-hero p { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.55; }
     .stu-home-accent { color: var(--accent); font-weight: 700; }
     .stu-home-progress-track { background: #fff; border-radius: 999px; height: 10px; overflow: hidden; margin-top: 0.65rem; }
@@ -705,7 +719,7 @@
         '<div class="help-tip-section">趣味练习</div>' +
         '<ol class="help-tip-ol">' +
         '<li>先打开「趣味首页」，进入 Example（每日解锁）、Reasoning（占位）或 Grammar（原大闯关）；</li>' +
-        '<li>Example 读取同目录 <code>example-practice.text</code>（优先，纯英文文件名）或 <code>example练习.text</code>；按 ## Day 1… 闯关；</li>' +
+        '<li>Example 读取同目录 <code>example-practice.text</code>（仅此英文名）；按 ## Day 1… 闯关；</li>' +
         '<li>Grammar 仍为语法 / 话题 / 措辞选择题闯关。</li>' +
         '</ol>';
 
@@ -1133,7 +1147,13 @@
         studentHomeCheckinYmdDict: null,
         /** 云端趣味 Example stamp_dates 解析成的日历日；null 尚未拉取 */
         studentHomeFunYmdDictFromServer: null,
-        studentHomeCheckinPrefetchLoading: false
+        studentHomeCheckinPrefetchLoading: false,
+        /** 学习首页：服务端返回的勋章列表（含「持续练习勋章」） */
+        studentHomeBadges: null,
+        /** 本次会话是否已尝试 POST claim-streak-badge（避免重复请求） */
+        studentHomeClaimStreakAttempted: false,
+        /** 本轮渲染结束后弹出恭喜（领取成功后置一次） */
+        studentHomeBadgeJustEarned: false
       };
       let recognition = null;
       let timerId = null;
@@ -1736,6 +1756,9 @@
           state.studentHomeCheckinYmdDict = null;
           state.studentHomeFunYmdDictFromServer = null;
           state.studentHomeCheckinPrefetchLoading = false;
+          state.studentHomeBadges = null;
+          state.studentHomeClaimStreakAttempted = false;
+          state.studentHomeBadgeJustEarned = false;
         } catch (_) {}
       }
       function getStudentTaskName() {
@@ -2158,11 +2181,15 @@
               });
             }
             state.studentHomeFunYmdDictFromServer = funServ;
+            if (fpData && fpData.ok && Array.isArray(fpData.badges)) {
+              state.studentHomeBadges = fpData.badges;
+            }
 
             var list = clsData && clsData.ok && Array.isArray(clsData.list) ? clsData.list : [];
             if (!list.length) {
               state.studentHomeCheckinYmdDict = {};
               state.studentHomeCheckinPrefetchLoading = false;
+              tryClaimStreakBadgeAfterHomePrefetch();
               render();
               return;
             }
@@ -2194,6 +2221,7 @@
               });
               state.studentHomeCheckinYmdDict = merged;
               state.studentHomeCheckinPrefetchLoading = false;
+              tryClaimStreakBadgeAfterHomePrefetch();
               render();
             });
           })
@@ -2202,6 +2230,39 @@
             if (state.studentHomeFunYmdDictFromServer === null) state.studentHomeFunYmdDictFromServer = {};
             if (state.studentHomeCheckinYmdDict === null) state.studentHomeCheckinYmdDict = {};
             render();
+          });
+      }
+      /** 与 server POST /api/student/claim-streak-badge 对齐：满 10 天连续打卡（趣味+班级）幂等写入 badges */
+      function tryClaimStreakBadgeAfterHomePrefetch() {
+        if (!API_NODE || PORTAL !== 'student') return;
+        if (state.studentHomeClaimStreakAttempted) return;
+        var u = getCurrentUser();
+        var pwd = getSessionPassword();
+        if (!u || !pwd) return;
+        state.studentHomeClaimStreakAttempted = true;
+        fetch(API_NODE + '/api/student/claim-streak-badge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u, password: pwd })
+        })
+          .then(function (r) {
+            return r.text().then(function (t) {
+              try {
+                return t ? JSON.parse(t) : {};
+              } catch (_) {
+                return {};
+              }
+            });
+          })
+          .then(function (data) {
+            if (data && data.ok && Array.isArray(data.badges)) {
+              state.studentHomeBadges = data.badges;
+              if (data.newlyAwarded) state.studentHomeBadgeJustEarned = true;
+              render();
+            }
+          })
+          .catch(function () {
+            state.studentHomeClaimStreakAttempted = false;
           });
       }
       function mergeEvalsForYmdFromRows(list, ymd) {
@@ -2740,31 +2801,25 @@
 
             if (state.studentFunExampleRaw == null && !state.studentFunExampleLoading && !state.studentFunExampleErr) {
               state.studentFunExampleLoading = true;
-              var exFiles = ['example-practice.text', 'example练习.text'];
-              (function tryEx(i) {
-                if (i >= exFiles.length) {
+              var exFile = 'example-practice.text';
+              fetch(resolveMaterialFileUrl(exFile), { cache: 'default' })
+                .then(function (r) {
+                  if (!r.ok) throw new Error('HTTP ' + r.status);
+                  return r.text();
+                })
+                .then(function (text) {
+                  state.studentFunExampleRaw = text;
+                  state.studentFunParsedDays = parseExamplePracticeDaySections(text);
+                  state.studentFunExampleLoading = false;
+                  state.studentFunExampleErr = '';
+                  render();
+                })
+                .catch(function () {
                   state.studentFunExampleLoading = false;
                   state.studentFunExampleErr =
-                    '无法加载 Example 材料（已依次请求 example-practice.text、example练习.text）。请将任一文件与 standalone 网页放在同一目录并重新部署；推荐使用英文文件名 example-practice.text。';
+                    '无法加载 Example 材料（example-practice.text）。请将文件与 standalone 网页放在同一目录并重新部署（GitHub Pages 需一并上传该文件）。';
                   render();
-                  return;
-                }
-                fetch(resolveMaterialFileUrl(exFiles[i]), { cache: 'default' })
-                  .then(function (r) {
-                    if (!r.ok) throw new Error('HTTP ' + r.status);
-                    return r.text();
-                  })
-                  .then(function (text) {
-                    state.studentFunExampleRaw = text;
-                    state.studentFunParsedDays = parseExamplePracticeDaySections(text);
-                    state.studentFunExampleLoading = false;
-                    state.studentFunExampleErr = '';
-                    render();
-                  })
-                  .catch(function () {
-                    tryEx(i + 1);
-                  });
-              })(0);
+                });
             }
 
             var bodyEx = '';
@@ -2773,12 +2828,12 @@
             var parsedEx = state.studentFunParsedDays;
 
             if (state.studentFunExampleLoading) {
-              bodyEx = '<p style="color:var(--muted)">正在加载 example练习.text …</p>';
+              bodyEx = '<p style="color:var(--muted)">正在加载 example-practice.text …</p>';
             } else if (state.studentFunExampleErr) {
               bodyEx = '<p style="color:var(--wrong)">' + escapeHtml(state.studentFunExampleErr) + '</p>';
             } else if (!parsedEx || !parsedEx.length) {
               bodyEx =
-                '<p style="color:var(--muted)">未能解析 Day。请在 example练习.text 中使用 ## Day 1 / ## Day 2 与「级别1：选择题」代码块。</p>';
+                '<p style="color:var(--muted)">未能解析 Day。请在 example-practice.text 中使用 ## Day 1 / ## Day 2 与「级别1：选择题」代码块。</p>';
             } else {
               var maxDayNum = Math.max.apply(
                 null,
@@ -2813,7 +2868,7 @@
                   bodyEx =
                     '<p style="color:var(--wrong)">材料中缺少 Day ' +
                     nextD +
-                    '，请在 example练习.text 中补充。</p>' +
+                    '，请在 example-practice.text 中补充。</p>' +
                     calNavHint;
                 }
               } else {
@@ -4416,6 +4471,43 @@
           var remainBadge = Math.max(0, goal - streakDays);
           var pctHero =
             streakDays <= 0 ? 8 : Math.min(100, Math.max(10, Math.round((streakDays / goal) * 100)));
+          var badgesArr = Array.isArray(state.studentHomeBadges) ? state.studentHomeBadges : [];
+          var streakBadgeEntry = null;
+          badgesArr.forEach(function (b) {
+            if (b && b.id === 'streak_10') streakBadgeEntry = b;
+          });
+          var streakBadgeEarned = !!streakBadgeEntry;
+          var streakPrimaryHtml = streakBadgeEarned
+            ? '<p style="margin:0;line-height:1.55">你已解锁「<strong>持续练习勋章</strong>」——连续打卡满 ' +
+              goal +
+              ' 天（趣味 Example + 班级录音合并统计）。继续保持！✨</p>'
+            : '<p style="margin:0;line-height:1.55">你已经连续打卡 <span class="stu-home-accent">' +
+              streakDays +
+              '</span> 天，再坚持 <strong>' +
+              remainBadge +
+              '</strong> 天就能获得学习徽章！</p>';
+          var badgeStripHtml = '';
+          if (streakBadgeEarned && streakBadgeEntry) {
+            var aw = streakBadgeEntry.awardedAt ? String(streakBadgeEntry.awardedAt) : '';
+            var awLabel = '';
+            if (aw) {
+              try {
+                awLabel = new Date(aw).toLocaleDateString('zh-CN');
+              } catch (_) {
+                awLabel = aw.slice(0, 10);
+              }
+            }
+            badgeStripHtml =
+              '<div class="stu-home-badge-earned"><span class="stu-home-badge-ico" aria-hidden="true"><i class="fa fa-trophy"></i></span><span><strong>持续练习勋章</strong>' +
+              (awLabel
+                ? '<span style="opacity:.85;font-weight:400"> · 颁发于 ' + escapeHtml(awLabel) + '</span>'
+                : '') +
+              '</span></div>';
+          }
+          var pwdHintHtml =
+            streakDays >= goal && !streakBadgeEarned && !getSessionPassword()
+              ? '<p style="margin:0.45rem 0 0;font-size:0.82rem;color:var(--muted)">你已达成连续打卡条件；请使用<strong>在线登录</strong>并输入密码，以便将勋章同步到云端（与服务器 <code>student_fun_practice.badges</code> 一致）。</p>'
+              : '';
           var classBlock =
             '<section class="stu-home-panel">' +
             '<div class="stu-home-row-head">' +
@@ -4449,11 +4541,9 @@
             '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:1rem">' +
             '<div style="flex:1;min-width:220px">' +
             '<h1>坚持，是学习最好的捷径 ✨</h1>' +
-            '<p style="margin:0;line-height:1.55">你已经连续打卡 <span class="stu-home-accent">' +
-            streakDays +
-            '</span> 天，再坚持 <strong>' +
-            remainBadge +
-            '</strong> 天就能获得学习徽章！</p>' +
+            badgeStripHtml +
+            streakPrimaryHtml +
+            pwdHintHtml +
             '<p style="margin:0.65rem 0 0;font-size:0.88rem;color:var(--muted)">趣味练习已累计打卡 <span class="stu-home-accent">' +
             stampN +
             '</span> 天（Example，本地与云端合并）；' +
@@ -4491,6 +4581,14 @@
             ' fei\'s studio · 让学习更有动力</footer>' +
             '</div>';
           bindStudentTopNav(root);
+          if (state.studentHomeBadgeJustEarned) {
+            state.studentHomeBadgeJustEarned = false;
+            try {
+              alert(
+                '恭喜！已获得「持续练习勋章」：连续打卡满 10 天（趣味 Example + 班级录音合并统计），已写入你的云端学习档案。'
+              );
+            } catch (_) {}
+          }
           var btnHc = root.querySelector('[data-action=studentHomeClassroom]');
           if (btnHc) {
             btnHc.onclick = function () {
