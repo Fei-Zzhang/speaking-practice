@@ -1,0 +1,135 @@
+口语练习 · 四大项目纸质模版
+Speaking practice workbook · four tracks
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【四大项目总览】（与网站「练习」页四个按钮顺序一致）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ① 举例练习     Example practice     →  example-practice.text
+  ② 解释练习     Reasoning practice   →  reasoning_training_practice.text
+  ③ 审题练习     Read questions       →  question_reading_practice.text（本文档 + 文末 Part 1）
+  ④ 话题词汇拓展 Topic vocab          →  topic_vocab_training.text
+
+说明
+• 顶栏「练习」仅包含以上四项；其他类型不列入本模版。
+• 各模块题目正文可分批录入；本文件为总目录 + 每块占位框架。
+• 分项材料与网页说明中的文件名保持一致，便于打印合并或对接线上。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+一、举例练习 · Example practice
+────────────────────────────────────
+材料文件：example-practice.text（与同目录专项包内容同步维护）
+
+【网页解析提示】每日区块建议：`## Day N` + `**级别1：选择题**` + Markdown 代码块内
+`1. …` / `A. B. C.` / `答案：1-X`（与现网 Example 打卡一致）。
+
+【框架 · 题目区 · 待填】
+  · Topic / Opinion / Reasoning 说明（若有）
+  · 按日或按关：题干、选项、纸面参考答案区
+
+
+二、解释练习 · Reasoning practice
+────────────────────────────────────
+材料文件：reasoning_training_practice.text
+
+【框架 · 题目区】
+  · 三模块（Logic Check / Keyword Expansion / Sentence Extension）见 reasoning_training_practice.text
+  · 网页「练习 → 解释」按 Part 1–3 交互；Quick Review 可作归纳
+
+
+三、审题练习 · Read questions
+────────────────────────────────────
+材料：可与本总册合并；独立维护时可用 question_reading_part1.text 等自定命名。
+
+【框架 · 题目区】
+  · Part A / B / C 等高阶题型可继续在此节扩展
+  · 网页「练习 → 审题」目前加载文末 **Part 1 Read Choice**（观点句/扣题 四选一）
+
+四、话题词汇拓展 · Topic vocab
+────────────────────────────────────
+材料文件：topic_vocab_training.text
+
+【框架 · 题目区 · 待填】
+  · 按话题：核心词 / 搭配 / 迷你填空或连线（题型自定）
+  · 题号与答案区
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【附 · 审题 Part 1 Read Choice】网页「练习 → 审题」加载以下区块
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Part 1   Read Choice
+阅读题目要求，选出**最扣题、最适合作为独立题论点句**的选项。
+
+Q1. Prompt:
+Some schools require students to wear uniforms. Do you agree or disagree? Which thesis BEST supports **agreeing** with school uniforms?
+(A) Uniforms reduce visible economic inequality and help students focus on learning rather than morning fashion choices, which strengthens the school community.
+(B) Teenagers need creative freedom, and uniforms remove all opportunities for self-expression.
+(C) Many schools in different countries have different rules, so policies vary.
+(D) Uniforms are usually cheaper than buying many casual outfits.
+Answer: A
+💡 TIP: Strong agree thesis names concrete benefits aligned with the question (equality, focus); (B) is disagree; (C) avoids a stance; (D) is a minor point without the main educational argument.
+──────────────────────────────────────────────────────────────────────
+Q2. Prompt:
+Do you prefer to study alone or in a group? Which thesis BEST supports **preferring group study**?
+(A) Group study forces passive students to participate because other members ask questions that expose gaps in understanding.
+(B) Studying alone is quieter, so it is always more efficient for everyone.
+(C) Libraries are good places to study because they have many books.
+(D) Some people dislike social interaction and should never join groups.
+Answer: A
+💡 TIP: The thesis must defend **group** study; (A) gives a mechanism (peer questioning); the others argue alone, change topic, or are overly absolute against groups.
+──────────────────────────────────────────────────────────────────────
+Q3. Prompt:
+Your city has extra funds. Should it build more parks or improve public transportation? Which thesis BEST supports **choosing parks**?
+(A) Accessible green space improves mental health and encourages physical activity for residents of all ages, especially those who cannot afford gym memberships.
+(B) Public transportation reduces traffic, so cities should never fund parks.
+(C) Both parks and transport are important, so the city should split the budget evenly without prioritizing either goal.
+(D) Parks are beautiful, and beauty is everything a city needs.
+Answer: A
+💡 TIP: (A) ties parks to concrete public-health outcomes; (B) contradicts the chosen side; (C) refuses to pick (bad for forced-choice prompts); (D) is vague hype without reasoning depth.
+──────────────────────────────────────────────────────────────────────
+Q4. Prompt:
+Do you agree that **social media does more harm than good** for teenagers? Which thesis BEST supports the **harm** position?
+(A) Constant exposure to filtered success stories triggers comparison cycles that predict higher anxiety and lower self-esteem in longitudinal studies of adolescent users.
+(B) Social media helps teenagers stay connected, so it is mostly positive.
+(C) Teenagers use many kinds of apps on their phones for different purposes.
+(D) Parents should buy phones for their children at younger ages.
+Answer: A
+💡 TIP: (A) names a **mechanism + population** tied to harm; (B) supports the opposite side; (C)(D) do not advance the harm claim.
+──────────────────────────────────────────────────────────────────────
+Q5. Prompt:
+Should universities require a public speaking course for all majors? Which thesis BEST supports **yes**?
+(A) Regardless of field, graduates must present ideas in meetings and interviews; structured speaking practice lowers anxiety and improves clarity under time pressure.
+(B) Public speaking is scary, so universities should eliminate all presentation requirements.
+(C) Engineering students need math more than speeches, so only arts majors should speak.
+(D) Some famous leaders were poor public speakers, so training does not matter.
+Answer: A
+💡 TIP: (A) links **all majors** to real workplace demand; others are irrelevant, opposite, or use weak celebrity exceptions.
+──────────────────────────────────────────────────────────────────────
+Q6. Prompt:
+Is it better to pursue one career path early or explore several fields first? Which thesis BEST supports **exploring several fields first**?
+(A) Early exploration reveals mismatch before sunk costs grow, because transferring after two years in the wrong track wastes less tuition and morale than switching after a decade.
+(B) People should choose one job at age eighteen and never reconsider.
+(C) Salary is the only metric that matters when choosing work.
+(D) Exploring is fun, and fun is the only goal of education.
+Answer: A
+💡 TIP: (A) offers **trade-off reasoning** (cost of early lock-in); (B)(C) attack exploration; (D) is shallow.
+──────────────────────────────────────────────────────────────────────
+Q7. Prompt:
+Should governments ban single-use plastics in restaurants? Which thesis BEST supports **banning**?
+(A) Visible plastic waste enters waterways quickly, harms wildlife, and burdens municipal cleanup budgets; reusables shift costs to producers and cut litter at the source.
+(B) Plastic is cheap, so restaurants will always prefer it.
+(C) People enjoy takeout food, therefore environmental policy is impossible.
+(D) Banning plastics will instantly solve every environmental problem on Earth.
+Answer: A
+💡 TIP: (A) connects ban to **mechanism + public cost**; (B)(C) are defeatist non-arguments; (D) overclaims and is easy to attack.
+──────────────────────────────────────────────────────────────────────
+Q8. Prompt:
+Which option is the **clearest off-topic thesis** for: "Should students be allowed to use AI tools when drafting essays?"
+(A) AI tools can reduce brainstorming time and help struggling students outline ideas faster if instructors require disclosure and a human final revision step.
+(B) University dining halls should offer more vegan meals because plant-based diets reduce carbon emissions.
+(C) Transparent AI use with instructor guidelines can teach editing skills while preventing undisclosed ghostwriting.
+(D) Without rules, AI encourages plagiarism; therefore schools must pair access with explicit integrity standards.
+Answer: B
+💡 TIP: (B) shifts entirely to **cafeteria menus**—classic off-topic; others engage AI, drafting, or academic integrity.

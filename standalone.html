@@ -631,13 +631,6 @@
       }
       const PORTAL = detectPortal();
 
-      /** 学生端 · 纸质练习材料（与 standalone 同目录部署） */
-      const STUDENT_MATERIAL_FILES = [
-        { id: 'grammar', title: '语法测试', file: 'grammartestmaterial.text' },
-        { id: 'topic', title: '话题展开', file: 'topicdevelopmenttestmaterial.text' },
-        { id: 'wording', title: '措辞与造句', file: 'wordingtestmaterial.text' }
-      ];
-
       /**
        * 纸质练习 .text：按「当前页面所在目录」拼接，兼容 GitHub Pages（含 pathname 无尾部斜杠、仅 /repo 等情况）
        * 勿仅用 new URL(rel, href)：在 /user/repo 这类路径下会把资源解析到域名根路径导致 404。
@@ -775,11 +768,11 @@
         '</ol>';
 
       var HELP_HTML_PRACTICE =
-        '<div class="help-tip-section">趣味练习</div>' +
+        '<div class="help-tip-section">练习（四模块）</div>' +
         '<ol class="help-tip-ol">' +
-        '<li>先打开「趣味首页」，进入 Example（每日解锁）、Reasoning（占位）或 Grammar（原大闯关）；</li>' +
-        '<li>Example 读取同目录 <code>example-practice.text</code>（仅此英文名）；按 ## Day 1… 闯关；</li>' +
-        '<li>Grammar 仍为语法 / 话题 / 措辞选择题闯关。</li>' +
+        '<li>顶栏「练习」仅有四项：<strong>举例</strong>（Example）、<strong>解释</strong>（Reasoning）、<strong>审题</strong>（Read questions）、<strong>话题词汇</strong>（Topic vocab）。</li>' +
+        '<li>四项材料：<code>example-practice.text</code>、<code>reasoning_training_practice.text</code>、<code>question_reading_practice.text</code>、<code>topic_vocab_training.text</code>（与练习四按钮一一对应）。</li>' +
+        '<li>举例 / 审题为 Part 1 四选一；解释为 Logic / Keyword / Sentence 三部分；话题词汇为分 Topic 浏览词库原文。</li>' +
         '</ol>';
 
       function getStudentHelpKind() {
@@ -894,7 +887,6 @@
               try {
                 sessionStorage.setItem('speaking_studentPracticeSection', 'hub');
               } catch (_) {}
-              if (!state.studentMaterialTab) state.studentMaterialTab = 'grammar';
             } else if (id === 'home') {
               state.mainChoice = null;
               try {
@@ -994,6 +986,16 @@
       }
 
       function shuffleMcqQuestion(q) {
+        if (q.noShuffle) {
+          return {
+            stem: q.stem,
+            options: q.options.slice(),
+            answerIndex: q.answerIndex,
+            n: q.n,
+            tip: q.tip || '',
+            noShuffle: true,
+          };
+        }
         var opts = q.options.slice();
         var correct = opts[q.answerIndex];
         for (var i = opts.length - 1; i > 0; i--) {
@@ -1004,7 +1006,343 @@
         }
         var newIdx = opts.indexOf(correct);
         if (newIdx < 0) newIdx = q.answerIndex;
-        return { stem: q.stem, options: opts, answerIndex: newIdx, n: q.n };
+        return { stem: q.stem, options: opts, answerIndex: newIdx, n: q.n, tip: q.tip || '', noShuffle: false };
+      }
+
+      /** example-practice.text · Part 1 Example Match（四选一 + TIP），解析见 parseExampleTrainingPart1 */
+      function parseExampleTrainingPart1(fullText) {
+        var full = String(fullText || '');
+        var startM = full.match(/Part\s*1\s+Example\s*Match/i);
+        if (!startM) return [];
+        var rest = full.slice(startM.index + startM[0].length);
+        var endM = rest.match(/\n\s*Part\s*2\b/i);
+        var chunk = endM ? rest.slice(0, endM.index) : rest;
+        var blocks = chunk.split(/\n(?=Q\d+\.\s*Opinion:)/);
+        var out = [];
+        for (var bi = 0; bi < blocks.length; bi++) {
+          var block = blocks[bi].trim();
+          if (!/^Q\d+\.\s*Opinion:/.test(block)) continue;
+          var qn = block.match(/^Q(\d+)\./);
+          var num = qn ? parseInt(qn[1], 10) : bi;
+          var stemM = block.match(/^Q\d+\.\s*Opinion:\s*([\s\S]*?)\(A\)\s*/);
+          if (!stemM) continue;
+          var stem = stemM[1].replace(/\s+/g, ' ').trim();
+          var afterA = block.slice(block.indexOf('(A)'));
+          var ma = afterA.match(/\(A\)\s*([\s\S]*?)\(B\)\s*/);
+          var mb = afterA.match(/\(B\)\s*([\s\S]*?)\(C\)\s*/);
+          var mc = afterA.match(/\(C\)\s*([\s\S]*?)\(D\)\s*/);
+          var md = afterA.match(/\(D\)\s*([\s\S]*?)Answer:\s*([A-Da-d])/i);
+          if (!ma || !mb || !mc || !md) continue;
+          var oA = ma[1].replace(/\s+/g, ' ').trim();
+          var oB = mb[1].replace(/\s+/g, ' ').trim();
+          var oC = mc[1].replace(/\s+/g, ' ').trim();
+          var oD = md[1].replace(/\s+/g, ' ').trim();
+          var letter = String(md[2] || 'A').toUpperCase();
+          var answerIndex = letter === 'B' ? 1 : letter === 'C' ? 2 : letter === 'D' ? 3 : 0;
+          var tipM = block.match(/💡\s*TIP:\s*([\s\S]*?)(?=\n[─\-]{3,}|\n\s*$|$)/);
+          var tip = tipM ? tipM[1].replace(/\s+/g, ' ').trim() : '';
+          out.push({ stem: stem, options: [oA, oB, oC, oD], answerIndex: answerIndex, n: num, tip: tip });
+        }
+        out.sort(function (a, b) {
+          return a.n - b.n;
+        });
+        return out;
+      }
+
+      /** example-practice.text：Part 2 起原文（供线下/拓展阅读），见 sliceExampleTrainingPart2Onward */
+      function sliceExampleTrainingPart2Onward(fullText) {
+        var full = String(fullText || '');
+        var m = full.match(/\n\s*(Part\s*2\b[\s\S]*)/i);
+        return m ? m[1].trim() : '';
+      }
+
+      /** example-practice.text：同源优先；支持 Part 1 Example Match 或 ## Day 语法；?examplePractice= 覆盖 URL */
+      function examplePracticeFetchUrlList() {
+        var list = [];
+        function add(u) {
+          if (!u) return;
+          var s = String(u).trim();
+          if (list.indexOf(s) === -1) list.push(s);
+        }
+        try {
+          var sp = new URLSearchParams(window.location.search || '');
+          var ov = sp.get('examplePractice');
+          if (ov && /^https?:\/\//i.test(String(ov).trim())) add(String(ov).trim());
+        } catch (_e) {}
+        add(resolveMaterialFileUrl('example-practice.text'));
+        var brs = ['main', 'master'];
+        var bi;
+        for (bi = 0; bi < brs.length; bi++) {
+          var br = brs[bi];
+          add(
+            'https://raw.githubusercontent.com/Fei-Zzhang/speaking-practice/' +
+              br +
+              '/example-practice.text'
+          );
+          add('https://cdn.jsdelivr.net/gh/Fei-Zzhang/speaking-practice@' + br + '/example-practice.text');
+        }
+        return list;
+      }
+
+      /** 举例：Example Match 块或按日语法合并为平面 MCQ 列表 */
+      function parseExamplePracticeWeb(fullText) {
+        var t = String(fullText || '');
+        if (/Part\s*1\s+Example\s*Match/i.test(t)) {
+          return parseExampleTrainingPart1(t).map(shuffleMcqQuestion);
+        }
+        var days = parseExamplePracticeDaySections(t);
+        var flat = [];
+        var di;
+        for (di = 0; di < days.length; di++) {
+          var d = days[di];
+          var qs = d.questions || [];
+          var qi;
+          for (qi = 0; qi < qs.length; qi++) {
+            var q = qs[qi];
+            flat.push({
+              stem: 'Day ' + d.dayNum + ' · ' + q.stem,
+              options: q.options,
+              answerIndex: q.answerIndex,
+              n: flat.length + 1,
+              tip: '',
+            });
+          }
+        }
+        var fi;
+        for (fi = 0; fi < flat.length; fi++) flat[fi].n = fi + 1;
+        return flat.map(shuffleMcqQuestion);
+      }
+
+      /** question_reading_practice.text · Part 1 Read Choice（题干至 (A)–(D)） */
+      function parseQuestionReadingPart1(fullText) {
+        var full = String(fullText || '');
+        var startM = full.match(/Part\s*1\s+Read\s+Choice/i);
+        if (!startM) return [];
+        var rest = full.slice(startM.index + startM[0].length);
+        var chunk = rest;
+        var blocks = chunk.split(/\n(?=Q\d+\.\s)/);
+        var out = [];
+        for (var bi = 0; bi < blocks.length; bi++) {
+          var block = blocks[bi].trim();
+          if (!/^Q\d+\./.test(block)) continue;
+          var qn = block.match(/^Q(\d+)\./);
+          var num = qn ? parseInt(qn[1], 10) : bi;
+          var stemM = block.match(/^Q\d+\.\s*([\s\S]*?)\(A\)\s*/);
+          if (!stemM) continue;
+          var stem = stemM[1].replace(/\s+/g, ' ').trim();
+          var afterA = block.slice(block.indexOf('(A)'));
+          var ma = afterA.match(/\(A\)\s*([\s\S]*?)\(B\)\s*/);
+          var mb = afterA.match(/\(B\)\s*([\s\S]*?)\(C\)\s*/);
+          var mc = afterA.match(/\(C\)\s*([\s\S]*?)\(D\)\s*/);
+          var md = afterA.match(/\(D\)\s*([\s\S]*?)Answer:\s*([A-Da-d])/i);
+          if (!ma || !mb || !mc || !md) continue;
+          var oA = ma[1].replace(/\s+/g, ' ').trim();
+          var oB = mb[1].replace(/\s+/g, ' ').trim();
+          var oC = mc[1].replace(/\s+/g, ' ').trim();
+          var oD = md[1].replace(/\s+/g, ' ').trim();
+          var letter = String(md[2] || 'A').toUpperCase();
+          var answerIndex = letter === 'B' ? 1 : letter === 'C' ? 2 : letter === 'D' ? 3 : 0;
+          var tipM = block.match(/💡\s*TIP:\s*([\s\S]*?)(?=\n[─\-]{3,}|\n\s*$|$)/);
+          var tip = tipM ? tipM[1].replace(/\s+/g, ' ').trim() : '';
+          out.push({ stem: stem, options: [oA, oB, oC, oD], answerIndex: answerIndex, n: num, tip: tip });
+        }
+        out.sort(function (a, b) {
+          return a.n - b.n;
+        });
+        return out;
+      }
+
+      function questionReadingPracticeFetchUrlList() {
+        var list = [];
+        function add(u) {
+          if (!u) return;
+          var s = String(u).trim();
+          if (list.indexOf(s) === -1) list.push(s);
+        }
+        try {
+          var sp = new URLSearchParams(window.location.search || '');
+          var ov = sp.get('questionReadingPractice');
+          if (ov && /^https?:\/\//i.test(String(ov).trim())) add(String(ov).trim());
+        } catch (_e) {}
+        add(resolveMaterialFileUrl('question_reading_practice.text'));
+        var brs = ['main', 'master'];
+        var bj;
+        for (bj = 0; bj < brs.length; bj++) {
+          var br = brs[bj];
+          add(
+            'https://raw.githubusercontent.com/Fei-Zzhang/speaking-practice/' +
+              br +
+              '/question_reading_practice.text'
+          );
+          add(
+            'https://cdn.jsdelivr.net/gh/Fei-Zzhang/speaking-practice@' +
+              br +
+              '/question_reading_practice.text'
+          );
+        }
+        return list;
+      }
+
+      function sliceReasoningTrainingPartChunk(fullText, partNum) {
+        var full = String(fullText || '');
+        var i1 = full.search(/Part\s*1:\s*Logic\s*Check/i);
+        var i2 = full.search(/Part\s*2:\s*Keyword\s*Expansion/i);
+        var i3 = full.search(/Part\s*3:\s*Sentence\s*Extension/i);
+        var i4 = full.search(/Quick\s+Review/i);
+        if (partNum === 1) return i1 >= 0 && i2 >= 0 ? full.slice(i1, i2) : '';
+        if (partNum === 2) return i2 >= 0 && i3 >= 0 ? full.slice(i2, i3) : '';
+        if (partNum === 3) return i3 >= 0 ? full.slice(i3, i4 >= 0 ? i4 : full.length) : '';
+        return '';
+      }
+
+      function parseReasoningTrainingLogicYN(chunk) {
+        var blocks = String(chunk || '').split(/\n(?=Q0*\d+\.\s)/);
+        var out = [];
+        for (var i = 0; i < blocks.length; i++) {
+          var block = blocks[i].trim();
+          if (!/^Q0*\d+\./.test(block)) continue;
+          var qm = block.match(/^Q0*(\d+)\./);
+          var num = qm ? parseInt(qm[1], 10) : out.length + 1;
+          var m = block.match(/A:\s*([\s\S]*?)\nB:\s*([\s\S]*?)\nAnswer:\s*([YNyn])/);
+          if (!m) continue;
+          var stem =
+            'Sentence A: ' +
+            m[1].replace(/\s+/g, ' ').trim() +
+            '\nSentence B: ' +
+            m[2].replace(/\s+/g, ' ').trim();
+          var yn = String(m[3]).toUpperCase() === 'N' ? 1 : 0;
+          var tipM = block.match(/【分析】([\s\S]*?)(?=\n[─\-]{3,}|\n(?=Q0*\d+\.)|$)/);
+          var tip = tipM ? tipM[1].replace(/\s+/g, ' ').trim() : '';
+          out.push({
+            stem: stem,
+            options: ['Y — B explains / supports A', 'N — B does not explain A'],
+            answerIndex: yn,
+            n: num,
+            tip: tip,
+            noShuffle: true,
+          });
+        }
+        out.sort(function (a, b) {
+          return a.n - b.n;
+        });
+        return out;
+      }
+
+      function parseReasoningTrainingDotMcq(chunk) {
+        var blocks = String(chunk || '').split(/\n(?=Q0*\d+\.\s)/);
+        var out = [];
+        for (var i = 0; i < blocks.length; i++) {
+          var block = blocks[i].trim();
+          if (!/^Q0*\d+\./.test(block)) continue;
+          var qm = block.match(/^Q0*(\d+)\./);
+          var num = qm ? parseInt(qm[1], 10) : out.length + 1;
+          var stemM = block.match(/^Q0*\d+\.\s*([\s\S]*?)\nA\.\s*/);
+          if (!stemM) continue;
+          var stem = stemM[1].replace(/\s+/g, ' ').trim();
+          var idxA = block.indexOf('A.');
+          if (idxA < 0) continue;
+          var afterA = block.slice(idxA);
+          var ma = afterA.match(/A\.\s*([\s\S]*?)\nB\.\s*/);
+          var mb = afterA.match(/B\.\s*([\s\S]*?)\nC\.\s*/);
+          var mc = afterA.match(/C\.\s*([\s\S]*?)\nD\.\s*/);
+          var md = afterA.match(/D\.\s*([\s\S]*?)(?:Your answer:[\s\S]*?)?Answer:\s*([A-Da-d])/i);
+          if (!ma || !mb || !mc || !md) continue;
+          var oA = ma[1].replace(/\s+/g, ' ').trim();
+          var oB = mb[1].replace(/\s+/g, ' ').trim();
+          var oC = mc[1].replace(/\s+/g, ' ').trim();
+          var oD = md[1].replace(/\s+/g, ' ').trim();
+          var letter = String(md[2] || 'A').toUpperCase();
+          var answerIndex = letter === 'B' ? 1 : letter === 'C' ? 2 : letter === 'D' ? 3 : 0;
+          var tipM = block.match(/【分析】([\s\S]*?)(?=\n[─\-]{3,}|\n(?=Q0*\d+\.)|$)/);
+          var tip = tipM ? tipM[1].replace(/\s+/g, ' ').trim() : '';
+          out.push({ stem: stem, options: [oA, oB, oC, oD], answerIndex: answerIndex, n: num, tip: tip });
+        }
+        out.sort(function (a, b) {
+          return a.n - b.n;
+        });
+        return out;
+      }
+
+      function reasoningTrainingPracticeFetchUrlList() {
+        var list = [];
+        function add(u) {
+          if (!u) return;
+          var s = String(u).trim();
+          if (list.indexOf(s) === -1) list.push(s);
+        }
+        try {
+          var sp = new URLSearchParams(window.location.search || '');
+          var ov = sp.get('reasoningTrainingPractice');
+          if (ov && /^https?:\/\//i.test(String(ov).trim())) add(String(ov).trim());
+        } catch (_e2) {}
+        add(resolveMaterialFileUrl('reasoning_training_practice.text'));
+        var brs2 = ['main', 'master'];
+        var bj;
+        for (bj = 0; bj < brs2.length; bj++) {
+          var br2 = brs2[bj];
+          add(
+            'https://raw.githubusercontent.com/Fei-Zzhang/speaking-practice/' +
+              br2 +
+              '/reasoning_training_practice.text'
+          );
+          add(
+            'https://cdn.jsdelivr.net/gh/Fei-Zzhang/speaking-practice@' +
+              br2 +
+              '/reasoning_training_practice.text'
+          );
+        }
+        return list;
+      }
+
+      function sliceReasoningTrainingQuickReview(fullText) {
+        var full = String(fullText || '');
+        var m = full.match(/Quick\s+Review:[\s\S]*$/i);
+        return m ? m[0].trim() : '';
+      }
+
+      function parseTopicVocabSections(fullText) {
+        var lines = String(fullText || '').split(/\r?\n/);
+        var sections = [];
+        var cur = { title: '前言 / Introduction', lines: [] };
+        var li;
+        for (li = 0; li < lines.length; li++) {
+          var line = lines[li];
+          if (/^\s*Topic\s+\d+/i.test(line)) {
+            sections.push(cur);
+            cur = { title: line.replace(/^\s+/, ''), lines: [] };
+          } else cur.lines.push(line);
+        }
+        sections.push(cur);
+        return sections;
+      }
+
+      function topicVocabTrainingFetchUrlList() {
+        var list = [];
+        function add(u) {
+          if (!u) return;
+          var s = String(u).trim();
+          if (list.indexOf(s) === -1) list.push(s);
+        }
+        try {
+          var sp = new URLSearchParams(window.location.search || '');
+          var ov = sp.get('topicVocabTraining');
+          if (ov && /^https?:\/\//i.test(String(ov).trim())) add(String(ov).trim());
+        } catch (_e3) {}
+        add(resolveMaterialFileUrl('topic_vocab_training.text'));
+        var brs3 = ['main', 'master'];
+        var bk;
+        for (bk = 0; bk < brs3.length; bk++) {
+          var br3 = brs3[bk];
+          add(
+            'https://raw.githubusercontent.com/Fei-Zzhang/speaking-practice/' +
+              br3 +
+              '/topic_vocab_training.text'
+          );
+          add(
+            'https://cdn.jsdelivr.net/gh/Fei-Zzhang/speaking-practice@' + br3 + '/topic_vocab_training.text'
+          );
+        }
+        return list;
       }
 
       /** 趣味 Example：按 ## Day N 拆分块，再解析级别1选择题 */
@@ -1032,17 +1370,6 @@
           return a.dayNum - b.dayNum;
         });
         return out;
-      }
-
-      function buildStudentMaterialMcqList(tabId, rawText, grammarFallback) {
-        if (tabId === 'grammar') return parseGrammarLevel1Mcq(rawText).map(shuffleMcqQuestion);
-        if (tabId === 'topic') return parseTopicWordBankMcq(rawText).map(shuffleMcqQuestion);
-        if (tabId === 'wording') {
-          var w = parseGrammarLevel1Mcq(rawText);
-          if (w.length) return w.map(shuffleMcqQuestion);
-          return parseGrammarLevel1Mcq(grammarFallback || '').map(shuffleMcqQuestion);
-        }
-        return [];
       }
 
       const SPEAKING_DURATION = 45;
@@ -1095,14 +1422,13 @@
         mainChoice: null,
         /** 学生端顶栏：home | login | bank | practice */
         studentNav: 'home',
-        /** 练习页当前材料：grammar | topic | wording */
-        studentMaterialTab: 'grammar',
+        /** 保留字段（旧版 Grammar 闯关已下线） */
+        studentMaterialTab: null,
         studentMaterialCache: {},
         studentMaterialLoading: false,
         studentMaterialError: '',
-        /** 练习材料闯关：{ tab, list, idx, score, answered, pick } */
         studentMaterialQuiz: null,
-        /** 趣味练习分区：hub | example | reasoning | legacy（grammar/话题等原大闯关） */
+        /** 学生练习分区：hub | example | reasoning | readquestions | topicvocab */
         studentPracticeSection: 'hub',
         studentFunExampleRaw: null,
         studentFunExampleLoading: false,
@@ -1115,6 +1441,39 @@
         studentFunCalY: null,
         studentFunCalM: null,
         studentFunForceSyncProgress: false,
+        /** 举例练习 · example-practice.text */
+        studentExampleTrainingLoading: false,
+        studentExampleTrainingError: '',
+        studentExampleTrainingPart1: null,
+        studentExampleTrainingIndex: 0,
+        studentExampleTrainingPicked: null,
+        studentExampleTrainingRevealed: false,
+        studentExampleTrainingShowExtra: false,
+        studentExampleTrainingRaw: '',
+        /** 解释练习 · reasoning_training_practice.text（Part 1–3） */
+        studentReasoningTrainingLoading: false,
+        studentReasoningTrainingError: '',
+        studentReasoningTrainingByPart: null,
+        studentReasoningTrainingTab: 'p1',
+        studentReasoningTrainingIndex: 0,
+        studentReasoningTrainingPicked: null,
+        studentReasoningTrainingRevealed: false,
+        studentReasoningTrainingShowExtra: false,
+        studentReasoningTrainingRaw: '',
+        /** 审题练习 · question_reading_practice.text（Part 1 Read Choice） */
+        studentReadChoiceLoading: false,
+        studentReadChoiceError: '',
+        studentReadChoicePart1: null,
+        studentReadChoiceIndex: 0,
+        studentReadChoicePicked: null,
+        studentReadChoiceRevealed: false,
+        studentReadChoiceRaw: '',
+        /** 话题词汇 · topic_vocab_training.text */
+        studentTopicVocabLoading: false,
+        studentTopicVocabError: '',
+        studentTopicVocabSections: null,
+        studentTopicVocabSel: 0,
+        studentTopicVocabRaw: '',
         mockPart: null,
         sectionId: null,
         mcqAnswers: {}, mcqScore: 0, transcript: '', editCount: 0, isEditing: false, finalText: '', phase: 'idle', secondsLeft: SPEAKING_DURATION,
@@ -2771,13 +3130,21 @@
         if (PORTAL === 'student' && state.mainChoice === 'studentMaterial') {
           try {
             var _spSec = sessionStorage.getItem('speaking_studentPracticeSection');
-            if (_spSec === 'hub' || _spSec === 'example' || _spSec === 'reasoning' || _spSec === 'legacy') {
+            if (
+              _spSec === 'hub' ||
+              _spSec === 'example' ||
+              _spSec === 'reasoning' ||
+              _spSec === 'readquestions' ||
+              _spSec === 'topicvocab'
+            ) {
               state.studentPracticeSection = _spSec;
             }
           } catch (_se) {}
           if (
             !state.studentPracticeSection ||
-            ['hub', 'example', 'reasoning', 'legacy'].indexOf(state.studentPracticeSection) < 0
+            ['hub', 'example', 'reasoning', 'readquestions', 'topicvocab'].indexOf(
+              state.studentPracticeSection
+            ) < 0
           ) {
             state.studentPracticeSection = 'hub';
           }
@@ -2792,14 +3159,14 @@
           if (secPr === 'hub') {
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card"><h2 style="margin:0 0 0.75rem">练习 · 趣味</h2>' +
-              '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 1rem">从 Example 开始：每日一关，通关「打卡解锁」后解锁下一关并记入日历盖章；登录可将进度同步至云端。</p>' +
-              '<div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:center">' +
-              '<button type="button" class="primary" data-hub-go="example">Example 练习</button>' +
-              '<button type="button" data-hub-go="reasoning">Reasoning</button>' +
-              '<button type="button" data-hub-go="legacy">Grammar 练习</button>' +
+              '<div class="card"><h2 style="margin:0 0 0.75rem">练习</h2>' +
+              '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 1rem">四项材料：<code style="font-size:0.82em">example-practice.text</code> · <code style="font-size:0.82em">reasoning_training_practice.text</code> · <code style="font-size:0.82em">question_reading_practice.text</code> · <code style="font-size:0.82em">topic_vocab_training.text</code>。总目录见 <code style="font-size:0.82em">question_reading_practice.text</code> 文首表格。</p>' +
+              '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:0.75rem;max-width:36rem">' +
+              '<button type="button" data-hub-go="example">举例练习<br><span style="font-size:0.78rem;font-weight:400;opacity:0.95">Example practice</span></button>' +
+              '<button type="button" data-hub-go="reasoning">解释练习<br><span style="font-size:0.78rem;font-weight:400;opacity:0.95">Reasoning practice</span></button>' +
+              '<button type="button" data-hub-go="readquestions">审题练习<br><span style="font-size:0.78rem;font-weight:400;opacity:0.95">Read questions</span></button>' +
+              '<button type="button" data-hub-go="topicvocab">话题词汇拓展<br><span style="font-size:0.78rem;font-weight:400;opacity:0.95">Topic vocab</span></button>' +
               '</div>' +
-              '<p style="color:var(--muted);font-size:0.82rem;margin:1rem 0 0">Grammar 为原「大闯关」语法 / 话题 / 措辞材料；Reasoning 后续补充。</p>' +
               '</div>';
             bindStudentTopNav(root);
             root.querySelectorAll('[data-hub-go]').forEach(function (btn) {
@@ -2814,552 +3181,701 @@
           }
 
           if (secPr === 'reasoning') {
+            if (
+              !state.studentReasoningTrainingByPart &&
+              !state.studentReasoningTrainingLoading &&
+              !state.studentReasoningTrainingError
+            ) {
+              state.studentReasoningTrainingLoading = true;
+              fetchFirstOkTextUrls(reasoningTrainingPracticeFetchUrlList(), 0)
+                .then(function (res) {
+                  state.studentReasoningTrainingLoading = false;
+                  state.studentReasoningTrainingRaw = res.text || '';
+                  var raw0 = state.studentReasoningTrainingRaw;
+                  var bp = {
+                    p1: parseReasoningTrainingLogicYN(sliceReasoningTrainingPartChunk(raw0, 1)).map(
+                      shuffleMcqQuestion
+                    ),
+                    p2: parseReasoningTrainingDotMcq(sliceReasoningTrainingPartChunk(raw0, 2)).map(
+                      shuffleMcqQuestion
+                    ),
+                    p3: parseReasoningTrainingDotMcq(sliceReasoningTrainingPartChunk(raw0, 3)).map(
+                      shuffleMcqQuestion
+                    ),
+                  };
+                  if (!bp.p1.length && !bp.p2.length && !bp.p3.length) {
+                    state.studentReasoningTrainingError =
+                      '未能从 reasoning_training_practice.text 解析出 Part 1–3 题目。请确认文件含 Logic Check / Keyword Expansion / Sentence Extension 区块。';
+                  } else {
+                    state.studentReasoningTrainingByPart = bp;
+                  }
+                  render();
+                })
+                .catch(function () {
+                  state.studentReasoningTrainingLoading = false;
+                  state.studentReasoningTrainingError =
+                    '无法加载 reasoning_training_practice.text。请将文件与本页放在同一目录，或检查网络与 CORS。';
+                  render();
+                });
+            }
+            if (state.studentReasoningTrainingLoading) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><p>正在加载 <code>reasoning_training_practice.text</code>…</p></div>';
+              bindStudentTopNav(root);
+              return;
+            }
+            if (state.studentReasoningTrainingError) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><h2 style="margin:0 0 0.75rem">解释练习 · Reasoning</h2>' +
+                '<p style="color:var(--wrong)">' +
+                escapeHtml(state.studentReasoningTrainingError) +
+                '</p>' +
+                '<div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:0.5rem">' +
+                '<button type="button" class="primary" data-rsn-retry>重试</button>' +
+                '<button type="button" data-practice-hub-back-rs>← 练习首页</button></div></div>';
+              bindStudentTopNav(root);
+              var rtryR2 = root.querySelector('[data-rsn-retry]');
+              if (rtryR2) {
+                rtryR2.onclick = function () {
+                  state.studentReasoningTrainingError = '';
+                  state.studentReasoningTrainingByPart = null;
+                  state.studentReasoningTrainingRaw = '';
+                  render();
+                };
+              }
+              root.querySelector('[data-practice-hub-back-rs]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+            var tabR = state.studentReasoningTrainingTab || 'p1';
+            var qsRs =
+              (state.studentReasoningTrainingByPart && state.studentReasoningTrainingByPart[tabR]) || [];
+            var ixR = state.studentReasoningTrainingIndex;
+            if (ixR < 0 || ixR >= qsRs.length) ixR = 0;
+            if (ixR !== state.studentReasoningTrainingIndex) state.studentReasoningTrainingIndex = ixR;
+            var qRs = qsRs[ixR];
+            var totR = qsRs.length;
+            if (!totR) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><p style="color:var(--muted)">当前分区暂无题目。</p>' +
+                '<button type="button" style="margin-top:1rem" data-practice-hub-back-rs>← 练习首页</button></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-practice-hub-back-rs]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+            var revR = state.studentReasoningTrainingRevealed;
+            var pkR = state.studentReasoningTrainingPicked;
+            var optsHR = '';
+            var oir;
+            for (oir = 0; oir < qRs.options.length; oir++) {
+              var clsR = 'material-game-opt';
+              if (revR) {
+                if (oir === qRs.answerIndex) clsR += ' correct';
+                else if (pkR === oir && oir !== qRs.answerIndex) clsR += ' wrong';
+              } else if (pkR === oir) clsR += ' picked';
+              optsHR +=
+                '<button type="button" class="' +
+                clsR +
+                '" data-rsn-opt="' +
+                oir +
+                '">' +
+                String.fromCharCode(65 + oir) +
+                '. ' +
+                escapeHtml(qRs.options[oir]) +
+                '</button>';
+            }
+            var tipBR =
+              revR && qRs.tip
+                ? '<div class="ai-prompt-box" style="margin-top:1rem"><strong>解析</strong><br>' +
+                  escapeHtml(qRs.tip) +
+                  '</div>'
+                : '';
+            var doneR = ixR >= totR - 1 && revR;
+            var qv = sliceReasoningTrainingQuickReview(state.studentReasoningTrainingRaw || '');
+            var extraR =
+              qv && state.studentReasoningTrainingShowExtra
+                ? '<div class="material-text-body" style="margin-top:1rem;max-height:min(50vh,360px);white-space:pre-wrap">' +
+                  escapeHtml(qv) +
+                  '</div>'
+                : '';
+            var toggR = qv
+              ? '<button type="button" style="margin-top:0.75rem" data-rsn-toggle-extra>' +
+                (state.studentReasoningTrainingShowExtra ? '收起 Quick Review' : '展开 Quick Review 归纳') +
+                '</button>'
+              : '';
+            var subh =
+              tabR === 'p1'
+                ? 'Part 1 · Logic Check（Y/N）'
+                : tabR === 'p2'
+                  ? 'Part 2 · Keyword Expansion'
+                  : 'Part 3 · Sentence Extension';
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card"><h2 style="margin:0 0 0.75rem">Reasoning · 敬请期待</h2>' +
-              '<p style="color:var(--muted)">推理类趣味练习正在设计中。</p>' +
-              '<button type="button" style="margin-top:1rem" data-practice-hub-back>← 返回趣味首页</button></div>';
+              '<div class="card">' +
+              '<div class="material-game-head">' +
+              '<strong>解释练习 · Reasoning training</strong>' +
+              '<span style="color:var(--muted);font-size:0.88rem">来源 <code style="font-size:0.82em">reasoning_training_practice.text</code></span></div>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:0.45rem;margin:0 0 1rem">' +
+              '<button type="button" class="' +
+              (tabR === 'p1' ? 'primary' : '') +
+              '" data-rsn-tab="p1">Part 1</button>' +
+              '<button type="button" class="' +
+              (tabR === 'p2' ? 'primary' : '') +
+              '" data-rsn-tab="p2">Part 2</button>' +
+              '<button type="button" class="' +
+              (tabR === 'p3' ? 'primary' : '') +
+              '" data-rsn-tab="p3">Part 3</button></div>' +
+              '<p style="color:var(--muted);font-size:0.88rem;margin:0 0 0.75rem">' +
+              escapeHtml(subh) +
+              ' · 第 ' +
+              (ixR + 1) +
+              ' / ' +
+              totR +
+              ' 题</p>' +
+              '<p class="material-game-stem" style="white-space:pre-wrap">' +
+              escapeHtml(qRs.stem) +
+              '</p>' +
+              optsHR +
+              tipBR +
+              '<div class="actions" style="margin-top:1rem">' +
+              '<button type="button" data-practice-hub-back-rs>← 练习首页</button>' +
+              '<span style="flex:1"></span>' +
+              (!revR
+                ? '<span style="color:var(--muted);font-size:0.88rem">点击选项查看解析</span>'
+                : '') +
+              (revR && !doneR
+                ? '<button type="button" class="primary" data-rsn-next>下一题</button>'
+                : '') +
+              (revR && doneR
+                ? '<button type="button" class="primary" data-rsn-restart>重新开始</button>'
+                : '') +
+              '</div>' +
+              toggR +
+              extraR +
+              '</div>';
             bindStudentTopNav(root);
-            root.querySelector('[data-practice-hub-back]').onclick = function () {
+            root.querySelector('[data-practice-hub-back-rs]').onclick = function () {
               persistPracticeSection('hub');
               render();
             };
+            root.querySelectorAll('[data-rsn-tab]').forEach(function (bt) {
+              bt.onclick = function () {
+                var t = bt.getAttribute('data-rsn-tab');
+                if (t === state.studentReasoningTrainingTab) return;
+                state.studentReasoningTrainingTab = t;
+                state.studentReasoningTrainingIndex = 0;
+                state.studentReasoningTrainingPicked = null;
+                state.studentReasoningTrainingRevealed = false;
+                render();
+              };
+            });
+            root.querySelectorAll('[data-rsn-opt]').forEach(function (btn) {
+              btn.onclick = function () {
+                if (state.studentReasoningTrainingRevealed) return;
+                var ox = parseInt(btn.getAttribute('data-rsn-opt'), 10);
+                state.studentReasoningTrainingPicked = ox;
+                state.studentReasoningTrainingRevealed = true;
+                render();
+              };
+            });
+            var nxR = root.querySelector('[data-rsn-next]');
+            if (nxR) {
+              nxR.onclick = function () {
+                state.studentReasoningTrainingIndex = Math.min(ixR + 1, totR - 1);
+                state.studentReasoningTrainingPicked = null;
+                state.studentReasoningTrainingRevealed = false;
+                render();
+              };
+            }
+            var rsSta = root.querySelector('[data-rsn-restart]');
+            if (rsSta) {
+              rsSta.onclick = function () {
+                state.studentReasoningTrainingIndex = 0;
+                state.studentReasoningTrainingPicked = null;
+                state.studentReasoningTrainingRevealed = false;
+                var rawR = state.studentReasoningTrainingRaw;
+                if (rawR && state.studentReasoningTrainingByPart) {
+                  state.studentReasoningTrainingByPart = {
+                    p1: parseReasoningTrainingLogicYN(sliceReasoningTrainingPartChunk(rawR, 1)).map(
+                      shuffleMcqQuestion
+                    ),
+                    p2: parseReasoningTrainingDotMcq(sliceReasoningTrainingPartChunk(rawR, 2)).map(
+                      shuffleMcqQuestion
+                    ),
+                    p3: parseReasoningTrainingDotMcq(sliceReasoningTrainingPartChunk(rawR, 3)).map(
+                      shuffleMcqQuestion
+                    ),
+                  };
+                }
+                render();
+              };
+            }
+            var tgR = root.querySelector('[data-rsn-toggle-extra]');
+            if (tgR) {
+              tgR.onclick = function () {
+                state.studentReasoningTrainingShowExtra = !state.studentReasoningTrainingShowExtra;
+                render();
+              };
+            }
+            return;
+          }
+
+          if (secPr === 'readquestions') {
+            if (
+              !state.studentReadChoicePart1 &&
+              !state.studentReadChoiceLoading &&
+              !state.studentReadChoiceError
+            ) {
+              state.studentReadChoiceLoading = true;
+              fetchFirstOkTextUrls(questionReadingPracticeFetchUrlList(), 0)
+                .then(function (res) {
+                  state.studentReadChoiceLoading = false;
+                  state.studentReadChoiceRaw = res.text || '';
+                  var qsRd = parseQuestionReadingPart1(res.text).map(shuffleMcqQuestion);
+                  if (!qsRd.length) {
+                    state.studentReadChoiceError =
+                      '未能解析 Part 1 Read Choice。请确认 question_reading_practice.text 文末含「Part 1 Read Choice」与四选一格式。';
+                  } else {
+                    state.studentReadChoicePart1 = qsRd;
+                  }
+                  render();
+                })
+                .catch(function () {
+                  state.studentReadChoiceLoading = false;
+                  state.studentReadChoiceError =
+                    '无法加载 question_reading_practice.text。请将文件与本页放在同一目录，或检查网络与 CORS。';
+                  render();
+                });
+            }
+            if (state.studentReadChoiceLoading) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><p>正在加载 <code>question_reading_practice.text</code>…</p></div>';
+              bindStudentTopNav(root);
+              return;
+            }
+            if (state.studentReadChoiceError) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><h2 style="margin:0 0 0.75rem">审题练习 · Read Choice</h2>' +
+                '<p style="color:var(--wrong)">' +
+                escapeHtml(state.studentReadChoiceError) +
+                '</p>' +
+                '<div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:0.5rem">' +
+                '<button type="button" class="primary" data-rq-retry>重试</button>' +
+                '<button type="button" data-practice-hub-back-rq>← 练习首页</button></div></div>';
+              bindStudentTopNav(root);
+              var rtryQ = root.querySelector('[data-rq-retry]');
+              if (rtryQ) {
+                rtryQ.onclick = function () {
+                  state.studentReadChoiceError = '';
+                  state.studentReadChoicePart1 = null;
+                  state.studentReadChoiceRaw = '';
+                  render();
+                };
+              }
+              root.querySelector('[data-practice-hub-back-rq]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+            var qsQ = state.studentReadChoicePart1 || [];
+            var ixQ = state.studentReadChoiceIndex;
+            if (ixQ < 0 || ixQ >= qsQ.length) ixQ = 0;
+            if (ixQ !== state.studentReadChoiceIndex) state.studentReadChoiceIndex = ixQ;
+            var qQ = qsQ[ixQ];
+            var totQ = qsQ.length;
+            var revQ = state.studentReadChoiceRevealed;
+            var pkQ = state.studentReadChoicePicked;
+            var optsQ = '';
+            var oq;
+            for (oq = 0; oq < qQ.options.length; oq++) {
+              var clsQ = 'material-game-opt';
+              if (revQ) {
+                if (oq === qQ.answerIndex) clsQ += ' correct';
+                else if (pkQ === oq && oq !== qQ.answerIndex) clsQ += ' wrong';
+              } else if (pkQ === oq) clsQ += ' picked';
+              optsQ +=
+                '<button type="button" class="' +
+                clsQ +
+                '" data-rq-opt="' +
+                oq +
+                '">' +
+                String.fromCharCode(65 + oq) +
+                '. ' +
+                escapeHtml(qQ.options[oq]) +
+                '</button>';
+            }
+            var tipQ =
+              revQ && qQ.tip
+                ? '<div class="ai-prompt-box" style="margin-top:1rem"><strong>💡 TIP</strong><br>' +
+                  escapeHtml(qQ.tip) +
+                  '</div>'
+                : '';
+            var doneQ = ixQ >= totQ - 1 && revQ;
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card">' +
+              '<div class="material-game-head">' +
+              '<strong>审题练习 · Part 1 Read Choice</strong>' +
+              '<span style="color:var(--muted);font-size:0.88rem">第 ' +
+              (ixQ + 1) +
+              ' / ' +
+              totQ +
+              ' 题 · <code style="font-size:0.82em">question_reading_practice.text</code></span></div>' +
+              '<p class="material-game-stem" style="white-space:pre-wrap">' +
+              escapeHtml(qQ.stem) +
+              '</p>' +
+              optsQ +
+              tipQ +
+              '<div class="actions" style="margin-top:1rem">' +
+              '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
+              '<span style="flex:1"></span>' +
+              (!revQ
+                ? '<span style="color:var(--muted);font-size:0.88rem">点击选项查看解析</span>'
+                : '') +
+              (revQ && !doneQ
+                ? '<button type="button" class="primary" data-rq-next>下一题</button>'
+                : '') +
+              (revQ && doneQ
+                ? '<button type="button" class="primary" data-rq-restart>重新开始</button>'
+                : '') +
+              '</div></div>';
+            bindStudentTopNav(root);
+            root.querySelector('[data-practice-hub-back-rq]').onclick = function () {
+              persistPracticeSection('hub');
+              render();
+            };
+            root.querySelectorAll('[data-rq-opt]').forEach(function (btn) {
+              btn.onclick = function () {
+                if (state.studentReadChoiceRevealed) return;
+                state.studentReadChoicePicked = parseInt(btn.getAttribute('data-rq-opt'), 10);
+                state.studentReadChoiceRevealed = true;
+                render();
+              };
+            });
+            var nxQ = root.querySelector('[data-rq-next]');
+            if (nxQ) {
+              nxQ.onclick = function () {
+                state.studentReadChoiceIndex = Math.min(ixQ + 1, totQ - 1);
+                state.studentReadChoicePicked = null;
+                state.studentReadChoiceRevealed = false;
+                render();
+              };
+            }
+            var rsQ = root.querySelector('[data-rq-restart]');
+            if (rsQ) {
+              rsQ.onclick = function () {
+                state.studentReadChoiceIndex = 0;
+                state.studentReadChoicePicked = null;
+                state.studentReadChoiceRevealed = false;
+                if (state.studentReadChoiceRaw) {
+                  state.studentReadChoicePart1 = parseQuestionReadingPart1(state.studentReadChoiceRaw).map(
+                    shuffleMcqQuestion
+                  );
+                }
+                render();
+              };
+            }
+            return;
+          }
+
+          if (secPr === 'topicvocab') {
+            if (
+              !state.studentTopicVocabSections &&
+              !state.studentTopicVocabLoading &&
+              !state.studentTopicVocabError
+            ) {
+              state.studentTopicVocabLoading = true;
+              fetchFirstOkTextUrls(topicVocabTrainingFetchUrlList(), 0)
+                .then(function (res) {
+                  state.studentTopicVocabLoading = false;
+                  state.studentTopicVocabRaw = res.text || '';
+                  var secs = parseTopicVocabSections(state.studentTopicVocabRaw);
+                  if (!secs.length) {
+                    state.studentTopicVocabError = '未能解析 topic_vocab_training.text 中的 Topic 区块。';
+                  } else {
+                    state.studentTopicVocabSections = secs;
+                    state.studentTopicVocabSel = 0;
+                  }
+                  render();
+                })
+                .catch(function () {
+                  state.studentTopicVocabLoading = false;
+                  state.studentTopicVocabError =
+                    '无法加载 topic_vocab_training.text。请将文件与本页放在同一目录，或检查网络与 CORS。';
+                  render();
+                });
+            }
+            if (state.studentTopicVocabLoading) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><p>正在加载 <code>topic_vocab_training.text</code>…</p></div>';
+              bindStudentTopNav(root);
+              return;
+            }
+            if (state.studentTopicVocabError) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><h2 style="margin:0 0 0.75rem">话题词汇 · Topic vocab</h2>' +
+                '<p style="color:var(--wrong)">' +
+                escapeHtml(state.studentTopicVocabError) +
+                '</p>' +
+                '<div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:0.5rem">' +
+                '<button type="button" class="primary" data-tv-retry>重试</button>' +
+                '<button type="button" data-practice-hub-back-tv>← 练习首页</button></div></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-tv-retry]').onclick = function () {
+                state.studentTopicVocabError = '';
+                state.studentTopicVocabSections = null;
+                state.studentTopicVocabRaw = '';
+                render();
+              };
+              root.querySelector('[data-practice-hub-back-tv]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+            var secsTv = state.studentTopicVocabSections || [];
+            var sel = state.studentTopicVocabSel;
+            if (sel < 0 || sel >= secsTv.length) sel = 0;
+            var secCur = secsTv[sel];
+            var bodyTv = (secCur.lines || []).join('\n');
+            var optsSel = '';
+            var si;
+            for (si = 0; si < secsTv.length; si++) {
+              optsSel +=
+                '<option value="' +
+                si +
+                '"' +
+                (si === sel ? ' selected' : '') +
+                '>' +
+                escapeHtml(secsTv[si].title || 'Topic ' + si) +
+                '</option>';
+            }
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="card">' +
+              '<div class="material-game-head">' +
+              '<strong>话题词汇拓展</strong>' +
+              '<span style="color:var(--muted);font-size:0.88rem"><code style="font-size:0.82em">topic_vocab_training.text</code></span></div>' +
+              '<label style="display:block;margin:0.75rem 0 0.5rem;font-size:0.9rem;color:var(--muted)">选择区块</label>' +
+              '<select id="topicVocabSel" style="max-width:100%;width:min(520px,100%);padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-size:0.92rem">' +
+              optsSel +
+              '</select>' +
+              '<div class="material-text-body" style="margin-top:1rem;max-height:min(65vh,520px);white-space:pre-wrap">' +
+              escapeHtml(bodyTv) +
+              '</div>' +
+              '<button type="button" style="margin-top:1rem" data-practice-hub-back-tv>← 练习首页</button>' +
+              '</div>';
+            bindStudentTopNav(root);
+            root.querySelector('[data-practice-hub-back-tv]').onclick = function () {
+              persistPracticeSection('hub');
+              render();
+            };
+            var selEl = root.querySelector('#topicVocabSel');
+            if (selEl) {
+              selEl.onchange = function () {
+                state.studentTopicVocabSel = parseInt(selEl.value, 10) || 0;
+                render();
+              };
+            }
             return;
           }
 
           if (secPr === 'example') {
-            if (state.studentFunCalY == null || state.studentFunCalM == null) {
-              var _tn = new Date();
-              state.studentFunCalY = _tn.getFullYear();
-              state.studentFunCalM = _tn.getMonth();
-            }
-            if (!state.studentFunPracticeProgress) {
-              state.studentFunPracticeProgress = loadFunPracticeLocal();
-            }
-            var uEx = getCurrentUser();
-            if (state.studentFunForceSyncProgress && API_NODE && uEx) {
-              state.studentFunForceSyncProgress = false;
-              fetch(API_NODE + '/api/student/fun-practice-progress?username=' + encodeURIComponent(uEx))
-                .then(function (r) {
-                  return r.json().catch(function () {
-                    return {};
-                  });
-                })
-                .then(function (data) {
-                  if (data && data.ok) {
-                    state.studentFunPracticeProgress = {
-                      nextDay: data.nextDay,
-                      stampDates: data.stampDates || [],
-                    };
-                    saveFunPracticeLocal(state.studentFunPracticeProgress);
-                    render();
-                  }
-                })
-                .catch(function () {});
-            }
-
-            if (state.studentFunExampleRaw == null && !state.studentFunExampleLoading && !state.studentFunExampleErr) {
-              state.studentFunExampleLoading = true;
-              var tryUrls = examplePracticeFetchUrlList();
-              fetchFirstOkTextUrls(tryUrls, 0)
+            if (
+              !state.studentExampleTrainingPart1 &&
+              !state.studentExampleTrainingLoading &&
+              !state.studentExampleTrainingError
+            ) {
+              state.studentExampleTrainingLoading = true;
+              fetchFirstOkTextUrls(examplePracticeFetchUrlList(), 0)
                 .then(function (res) {
-                  state.studentFunExampleRaw = res.text;
-                  state.studentFunParsedDays = parseExamplePracticeDaySections(res.text);
-                  state.studentFunExampleLoading = false;
-                  state.studentFunExampleErr = '';
+                  state.studentExampleTrainingLoading = false;
+                  state.studentExampleTrainingRaw = res.text || '';
+                  var qs = parseExamplePracticeWeb(res.text);
+                  if (!qs.length) {
+                    state.studentExampleTrainingError =
+                      '未能从 example-practice.text 解析出题目。请确认含「Part 1 Example Match」四选一，或含 ## Day + **级别1：选择题** 语法。';
+                  } else {
+                    state.studentExampleTrainingPart1 = qs;
+                  }
                   render();
                 })
                 .catch(function () {
-                  state.studentFunExampleLoading = false;
-                  state.studentFunExampleErr =
-                    '无法加载 Example 材料（example-practice.text）。已依次尝试：' +
-                    tryUrls.join(' · ') +
-                    '。若仓库为公开，一般 Raw 备用可通；也可在地址栏追加 ?examplePractice= 材料完整 https 链接 覆盖。';
+                  state.studentExampleTrainingLoading = false;
+                  state.studentExampleTrainingError =
+                    '无法加载 example-practice.text。请将文件与本页放在同一目录，或检查网络与 CORS。';
                   render();
                 });
             }
-
-            var bodyEx = '';
-            var progEx = state.studentFunPracticeProgress || loadFunPracticeLocal();
-            var nextD = progEx.nextDay;
-            var parsedEx = state.studentFunParsedDays;
-
-            if (state.studentFunExampleLoading) {
-              bodyEx = '<p style="color:var(--muted)">正在加载 example-practice.text …</p>';
-            } else if (state.studentFunExampleErr) {
-              bodyEx = '<p style="color:var(--wrong)">' + escapeHtml(state.studentFunExampleErr) + '</p>';
-            } else if (!parsedEx || !parsedEx.length) {
-              bodyEx =
-                '<p style="color:var(--muted)">未能解析 Day。请在 example-practice.text 中使用 ## Day 1 / ## Day 2 与「级别1：选择题」代码块。</p>';
-            } else {
-              var maxDayNum = Math.max.apply(
-                null,
-                parsedEx.map(function (d) {
-                  return d.dayNum;
-                })
-              );
-              var dayObjEx = null;
-              var pi;
-              for (pi = 0; pi < parsedEx.length; pi++) {
-                if (parsedEx[pi].dayNum === nextD) {
-                  dayObjEx = parsedEx[pi];
-                  break;
-                }
-              }
-              var calHtmlEx = buildFunPracticeCalendarHtml(state);
-              var calNavHint =
-                '<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border)">' +
-                '<p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.35rem">练习打卡日历 · 有声之日显示「印」，通关当日有礼花</p>' +
-                calHtmlEx +
-                '</div>';
-
-              if (!dayObjEx) {
-                if (nextD > maxDayNum) {
-                  bodyEx =
-                    '<p style="color:var(--correct);margin:0 0 0.75rem"><strong>已完成 Example 全部天数。</strong></p>' +
-                    '<p style="color:var(--muted);font-size:0.9rem">已盖章日期：' +
-                    escapeHtml((progEx.stampDates || []).join('、') || '无') +
-                    '</p>' +
-                    calNavHint;
-                } else {
-                  bodyEx =
-                    '<p style="color:var(--wrong)">材料中缺少 Day ' +
-                    nextD +
-                    '，请在 example-practice.text 中补充。</p>' +
-                    calNavHint;
-                }
-              } else {
-                var qlistEx = dayObjEx.questions;
-                if (!qlistEx.length) {
-                  bodyEx =
-                    '<p style="color:var(--muted)">第 ' +
-                    nextD +
-                    ' 天暂无选择题。</p>' +
-                    calNavHint;
-                } else {
-                  var fq = state.studentFunQuiz;
-                  if (
-                    !fq ||
-                    fq.dayNum !== nextD ||
-                    !fq.list ||
-                    fq.list.length !== qlistEx.length
-                  ) {
-                    state.studentFunQuiz = {
-                      dayNum: nextD,
-                      list: qlistEx,
-                      idx: 0,
-                      score: 0,
-                      answered: false,
-                      pick: null,
-                    };
-                    fq = state.studentFunQuiz;
-                  }
-                  var cq = fq.list[fq.idx];
-                  var total = fq.list.length;
-                  var optsHtmlEx = cq.options
-                    .map(function (op, oi) {
-                      var cls = 'material-game-opt';
-                      if (fq.answered) {
-                        if (oi === cq.answerIndex) cls += ' correct';
-                        else if (fq.pick === oi) cls += ' wrong';
-                      } else if (fq.pick === oi) cls += ' picked';
-                      return (
-                        '<button type="button" class="' +
-                        cls +
-                        '" data-fun-opt="' +
-                        oi +
-                        '">' +
-                        escapeHtml(String.fromCharCode(65 + oi)) +
-                        '. ' +
-                        escapeHtml(op) +
-                        '</button>'
-                      );
-                    })
-                    .join('');
-                  var btnRowEx = '';
-                  if (!fq.answered) {
-                    btnRowEx =
-                      '<button type="button" class="primary" id="btnFunSubmit" ' +
-                      (fq.pick == null ? 'disabled' : '') +
-                      '>提交本题</button>';
-                  } else if (fq.idx + 1 < total) {
-                    btnRowEx = '<button type="button" class="primary" id="btnFunNext">下一题</button>';
-                  } else {
-                    btnRowEx =
-                      '<p style="color:var(--correct);margin:0 0 0.75rem"><strong>今日关卡已答完</strong> 得分 ' +
-                      fq.score +
-                      ' / ' +
-                      total +
-                      '</p>' +
-                      '<button type="button" class="primary" id="btnFunStamp">打卡解锁下一天 · 日历盖章</button>';
-                  }
-                  bodyEx =
-                    '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 0.75rem">当前解锁：<strong>第 ' +
-                    nextD +
-                    ' 天</strong> · 登录后在服务端同步进度（须已在数据库创建 student_fun_practice 表）</p>' +
-                    '<div class="material-game-head"><span><strong>Example</strong> · 第 ' +
-                    (fq.idx + 1) +
-                    ' / ' +
-                    total +
-                    ' 题</span><span style="color:var(--muted)">得分 ' +
-                    fq.score +
-                    '</span></div>' +
-                    '<div class="material-game-stem">' +
-                    escapeHtml(cq.stem) +
-                    '</div>' +
-                    optsHtmlEx +
-                    '<div style="margin-top:1rem">' +
-                    btnRowEx +
-                    '</div>' +
-                    calNavHint;
-                }
-              }
+            if (state.studentExampleTrainingLoading) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><p>正在加载 <code>example-practice.text</code>…</p></div>';
+              bindStudentTopNav(root);
+              return;
             }
-
+            if (state.studentExampleTrainingError) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card"><h2 style="margin:0 0 0.75rem">举例练习 · Example Match</h2>' +
+                '<p style="color:var(--wrong)">' +
+                escapeHtml(state.studentExampleTrainingError) +
+                '</p>' +
+                '<div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:0.5rem">' +
+                '<button type="button" class="primary" data-ex-training-retry>重试</button>' +
+                '<button type="button" data-practice-hub-back-ex>← 练习首页</button></div></div>';
+              bindStudentTopNav(root);
+              var rtry = root.querySelector('[data-ex-training-retry]');
+              if (rtry) {
+                rtry.onclick = function () {
+                  state.studentExampleTrainingError = '';
+                  state.studentExampleTrainingPart1 = null;
+                  state.studentExampleTrainingRaw = '';
+                  render();
+                };
+              }
+              root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+            var qsEx = state.studentExampleTrainingPart1 || [];
+            var ix = state.studentExampleTrainingIndex;
+            if (ix < 0 || ix >= qsEx.length) ix = 0;
+            if (ix !== state.studentExampleTrainingIndex) state.studentExampleTrainingIndex = ix;
+            var qCur = qsEx[ix];
+            var total = qsEx.length;
+            var rev = state.studentExampleTrainingRevealed;
+            var pk = state.studentExampleTrainingPicked;
+            var optsHtml = '';
+            var oi;
+            for (oi = 0; oi < qCur.options.length; oi++) {
+              var cls = 'material-game-opt';
+              if (rev) {
+                if (oi === qCur.answerIndex) cls += ' correct';
+                else if pk === oi && oi !== qCur.answerIndex) cls += ' wrong';
+              } else if (pk === oi) cls += ' picked';
+              optsHtml +=
+                '<button type="button" class="' +
+                cls +
+                '" data-ex-opt="' +
+                oi +
+                '">' +
+                String.fromCharCode(65 + oi) +
+                '. ' +
+                escapeHtml(qCur.options[oi]) +
+                '</button>';
+            }
+            var tipBox =
+              rev && qCur.tip
+                ? '<div class="ai-prompt-box" style="margin-top:1rem"><strong>💡 TIP</strong><br>' +
+                  escapeHtml(qCur.tip) +
+                  '</div>'
+                : '';
+            var doneAll = ix >= total - 1 && rev;
+            var part23 = sliceExampleTrainingPart2Onward(state.studentExampleTrainingRaw || '');
+            var extraSection =
+              part23 && state.studentExampleTrainingShowExtra
+                ? '<div class="material-text-body" style="margin-top:1rem;max-height:min(50vh,360px)">' +
+                  escapeHtml(part23) +
+                  '</div>'
+                : '';
+            var toggleExtraBtn = part23
+              ? '<button type="button" style="margin-top:0.75rem" data-ex-toggle-extra>' +
+                (state.studentExampleTrainingShowExtra ? '收起 Part 2–3 原文' : '展开 Part 2–3 原文（填空 / 排序 · 线下练习）') +
+                '</button>'
+              : '';
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card"><p style="margin:0 0 0.75rem"><button type="button" data-practice-hub-back-ex>← 趣味首页</button></p>' +
-              '<h2 style="margin:0 0 0.75rem">趣味 · Example（每日解锁）</h2>' +
-              bodyEx +
+              '<div class="card">' +
+              '<div class="material-game-head">' +
+              '<strong>举例练习 · Part 1 Example Match</strong>' +
+              '<span style="color:var(--muted);font-size:0.88rem">第 ' +
+              (ix + 1) +
+              ' / ' +
+              total +
+              ' 题 · 来源 <code style="font-size:0.82em">example-practice.text</code></span></div>' +
+              '<p class="material-game-stem" style="white-space:pre-wrap">' +
+              escapeHtml(qCur.stem) +
+              '</p>' +
+              optsHtml +
+              tipBox +
+              '<div class="actions" style="margin-top:1rem">' +
+              '<button type="button" data-practice-hub-back-ex>← 练习首页</button>' +
+              '<span style="flex:1"></span>' +
+              (!rev
+                ? '<span style="color:var(--muted);font-size:0.88rem">点击选项查看解析</span>'
+                : '') +
+              (rev && !doneAll
+                ? '<button type="button" class="primary" data-ex-next>下一题</button>'
+                : '') +
+              (rev && doneAll
+                ? '<button type="button" class="primary" data-ex-restart>重新开始</button>'
+                : '') +
+              '</div>' +
+              toggleExtraBtn +
+              extraSection +
               '</div>';
             bindStudentTopNav(root);
             root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
               persistPracticeSection('hub');
               render();
             };
-            root.querySelectorAll('[data-fun-opt]').forEach(function (ob) {
-              ob.onclick = function () {
-                var qx = state.studentFunQuiz;
-                if (!qx || qx.answered) return;
-                qx.pick = parseInt(ob.getAttribute('data-fun-opt'), 10);
+            root.querySelectorAll('[data-ex-opt]').forEach(function (btn) {
+              btn.onclick = function () {
+                if (state.studentExampleTrainingRevealed) return;
+                var oix = parseInt(btn.getAttribute('data-ex-opt'), 10);
+                state.studentExampleTrainingPicked = oix;
+                state.studentExampleTrainingRevealed = true;
                 render();
               };
             });
-            var subF = document.getElementById('btnFunSubmit');
-            if (subF) {
-              subF.onclick = function () {
-                var qx = state.studentFunQuiz;
-                if (!qx || qx.pick == null || qx.answered) return;
-                var cur = qx.list[qx.idx];
-                qx.answered = true;
-                if (qx.pick === cur.answerIndex) qx.score++;
+            var nx = root.querySelector('[data-ex-next]');
+            if (nx) {
+              nx.onclick = function () {
+                state.studentExampleTrainingIndex = Math.min(ix + 1, total - 1);
+                state.studentExampleTrainingPicked = null;
+                state.studentExampleTrainingRevealed = false;
                 render();
               };
             }
-            var nxF = document.getElementById('btnFunNext');
-            if (nxF) {
-              nxF.onclick = function () {
-                var qx = state.studentFunQuiz;
-                if (!qx) return;
-                qx.idx++;
-                qx.answered = false;
-                qx.pick = null;
+            var rs = root.querySelector('[data-ex-restart]');
+            if (rs) {
+              rs.onclick = function () {
+                state.studentExampleTrainingIndex = 0;
+                state.studentExampleTrainingPicked = null;
+                state.studentExampleTrainingRevealed = false;
+                if (state.studentExampleTrainingPart1 && state.studentExampleTrainingRaw) {
+                  state.studentExampleTrainingPart1 = parseExamplePracticeWeb(state.studentExampleTrainingRaw);
+                }
                 render();
               };
             }
-            var stampB = document.getElementById('btnFunStamp');
-            if (stampB) {
-              stampB.onclick = function () {
-                var qx = state.studentFunQuiz;
-                if (!qx) return;
-                var dayDone = qx.dayNum;
-                var ymdLoc = ymdFromDateObj(new Date());
-                function finishAdvance(pr) {
-                  state.studentFunPracticeProgress = pr;
-                  saveFunPracticeLocal(pr);
-                  state.studentFunQuiz = null;
-                  state.studentFunCelebrationUntil = Date.now() + 5200;
-                  state.studentFunCelebrationYmd = ymdLoc;
-                  setTimeout(function () {
-                    state.studentFunCelebrationUntil = 0;
-                    render();
-                  }, 5400);
-                  render();
-                }
-                function localOnly() {
-                  var pr = loadFunPracticeLocal();
-                  if (pr.nextDay !== dayDone) return;
-                  pr.nextDay = dayDone + 1;
-                  if (pr.stampDates.indexOf(ymdLoc) < 0) pr.stampDates.push(ymdLoc);
-                  finishAdvance(pr);
-                }
-                var pwdF = getSessionPassword();
-                var uStamp = getCurrentUser();
-                if (API_NODE && uStamp && pwdF) {
-                  fetch(API_NODE + '/api/student/fun-practice-complete-day', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      username: uStamp,
-                      password: pwdF,
-                      completedDay: dayDone,
-                      completedDateYmd: ymdLoc,
-                    }),
-                  })
-                    .then(function (r) {
-                      return r.json().catch(function () {
-                        return {};
-                      });
-                    })
-                    .then(function (data) {
-                      if (data && data.ok) {
-                        finishAdvance({
-                          nextDay: data.nextDay,
-                          stampDates: data.stampDates || [],
-                        });
-                      } else {
-                        localOnly();
-                      }
-                    })
-                    .catch(function () {
-                      localOnly();
-                    });
-                } else {
-                  localOnly();
-                }
-              };
-            }
-            root.querySelectorAll('[data-cal-nav]').forEach(function (b) {
-              b.onclick = function () {
-                var d = b.getAttribute('data-cal-nav');
-                var y = state.studentFunCalY;
-                var m0 = state.studentFunCalM;
-                if (y == null || m0 == null) {
-                  var t2 = new Date();
-                  y = t2.getFullYear();
-                  m0 = t2.getMonth();
-                }
-                if (d === 'prev') {
-                  if (m0 <= 0) {
-                    y--;
-                    m0 = 11;
-                  } else {
-                    m0--;
-                  }
-                } else {
-                  if (m0 >= 11) {
-                    y++;
-                    m0 = 0;
-                  } else {
-                    m0++;
-                  }
-                }
-                state.studentFunCalY = y;
-                state.studentFunCalM = m0;
+            var tg = root.querySelector('[data-ex-toggle-extra]');
+            if (tg) {
+              tg.onclick = function () {
+                state.studentExampleTrainingShowExtra = !state.studentExampleTrainingShowExtra;
                 render();
               };
-            });
+            }
             return;
           }
 
-          var navMat = studentTopNavHtml();
-          var tabMat = state.studentMaterialTab || 'grammar';
-
-          var mfMat =
-            STUDENT_MATERIAL_FILES.find(function (x) {
-              return x.id === tabMat;
-            }) || STUDENT_MATERIAL_FILES[0];
-          var tabsHtmlMat =
-            '<div class="material-tabs">' +
-            STUDENT_MATERIAL_FILES.map(function (m) {
-              var ac = m.id === mfMat.id ? ' tab-active' : '';
-              return '<button type="button" class="' + ac + '" data-mat-tab="' + m.id + '">' + escapeHtml(m.title) + '</button>';
-            }).join('') +
-            '</div>';
-          var cachedMat = state.studentMaterialCache[mfMat.id];
-          if (cachedMat == null && !state.studentMaterialError) {
-            if (!state.studentMaterialLoading) {
-              state.studentMaterialLoading = true;
-              fetch(resolveMaterialFileUrl(mfMat.file), { cache: 'default' })
-                .then(function (r) {
-                  if (!r.ok) throw new Error('HTTP ' + r.status);
-                  return r.text();
-                })
-                .then(function (text) {
-                  state.studentMaterialCache[mfMat.id] = text;
-                  state.studentMaterialLoading = false;
-                  state.studentMaterialError = '';
-                  render();
-                })
-                .catch(function () {
-                  state.studentMaterialLoading = false;
-                  state.studentMaterialError =
-                    '无法加载 ' + mfMat.file + '（请将该文件与 standalone 放在同一目录并部署）';
-                  render();
-                });
-            }
-          }
-          var bodyMat;
-          if (mfMat.id === 'wording' && state.studentMaterialCache['grammar'] == null && state.studentMaterialCache['wording'] != null) {
-            if (!state._fetchGrammarForWording) {
-              state._fetchGrammarForWording = true;
-              fetch(resolveMaterialFileUrl('grammartestmaterial.text'), { cache: 'default' })
-                .then(function (r) {
-                  if (!r.ok) throw new Error('HTTP ' + r.status);
-                  return r.text();
-                })
-                .then(function (text) {
-                  state.studentMaterialCache['grammar'] = text;
-                })
-                .catch(function () {})
-                .finally(function () {
-                  state._fetchGrammarForWording = false;
-                  render();
-                });
-            }
-          }
-          if (state.studentMaterialCache[mfMat.id] != null) {
-            var rawM = state.studentMaterialCache[mfMat.id];
-            var gFb = state.studentMaterialCache['grammar'] || '';
-            var qlist = buildStudentMaterialMcqList(mfMat.id, rawM, gFb);
-            var quiz = state.studentMaterialQuiz;
-            if (!quiz || quiz.tab !== mfMat.id || !quiz.list || quiz.list.length !== qlist.length) {
-              state.studentMaterialQuiz = {
-                tab: mfMat.id,
-                list: qlist,
-                idx: 0,
-                score: 0,
-                answered: false,
-                pick: null
-              };
-              quiz = state.studentMaterialQuiz;
-            }
-            if (!qlist.length) {
-              bodyMat =
-                '<p style="color:var(--muted)">' +
-                (mfMat.id === 'wording' && !gFb
-                  ? '正在加载关联语法材料…'
-                  : '暂无可闯关的单选题。请确认材料中含「级别1：选择题」代码块，或「练习题1：选词填空」格式。') +
-                '</p>';
-            } else {
-              var cq = quiz.list[quiz.idx];
-              var total = quiz.list.length;
-              var optsHtml = cq.options
-                .map(function (op, oi) {
-                  var cls = 'material-game-opt';
-                  if (quiz.answered) {
-                    if (oi === cq.answerIndex) cls += ' correct';
-                    else if (quiz.pick === oi) cls += ' wrong';
-                  } else if (quiz.pick === oi) cls += ' picked';
-                  return (
-                    '<button type="button" class="' +
-                    cls +
-                    '" data-mat-opt="' +
-                    oi +
-                    '">' +
-                    escapeHtml(String.fromCharCode(65 + oi)) +
-                    '. ' +
-                    escapeHtml(op) +
-                    '</button>'
-                  );
-                })
-                .join('');
-              var btnRow =
-                !quiz.answered
-                  ? '<button type="button" class="primary" id="btnMatSubmit" ' +
-                    (quiz.pick == null ? 'disabled' : '') +
-                    '>提交本题</button>'
-                  : quiz.idx + 1 < total
-                    ? '<button type="button" class="primary" id="btnMatNext">下一关</button>'
-                    : '<p style="color:var(--correct);margin:0"><strong>闯关完成！</strong> 得分 ' +
-                      quiz.score +
-                      ' / ' +
-                      total +
-                      '</p><button type="button" id="btnMatRestart">再玩一次</button>';
-              bodyMat =
-                '<div class="material-game-head"><span><strong>大闯关</strong> · 第 ' +
-                (quiz.idx + 1) +
-                ' / ' +
-                total +
-                ' 题</span><span style="color:var(--muted)">得分 ' +
-                quiz.score +
-                '</span></div>' +
-                '<div class="material-game-stem">' +
-                escapeHtml(cq.stem) +
-                '</div>' +
-                optsHtml +
-                '<div style="margin-top:1rem">' +
-                btnRow +
-                '</div>';
-            }
-          } else if (state.studentMaterialError) {
-            bodyMat =
-              '<p style="color:var(--wrong)">' +
-              escapeHtml(state.studentMaterialError) +
-              '</p><button type="button" class="primary" style="margin-top:0.75rem" id="btnMatRetry">重试</button>';
-          } else {
-            bodyMat = '<p style="color:var(--muted)">正在加载…</p>';
-          }
-          root.innerHTML =
-            navMat +
-            '<div class="card"><p style="margin:0 0 0.75rem"><button type="button" data-practice-hub-back-lg>← 趣味首页</button></p>' +
-            '<h2 style="margin:0 0 0.75rem">Grammar · 大闯关</h2>' +
-            tabsHtmlMat +
-            bodyMat +
-            '</div>';
-          bindStudentTopNav(root);
-          var bhLg = root.querySelector('[data-practice-hub-back-lg]');
-          if (bhLg) {
-            bhLg.onclick = function () {
-              persistPracticeSection('hub');
-              render();
-            };
-          }
-          root.querySelectorAll('[data-mat-tab]').forEach(function (bt) {
-            bt.onclick = function () {
-              state.studentMaterialTab = bt.getAttribute('data-mat-tab');
-              state.studentMaterialError = '';
-              state.studentMaterialQuiz = null;
-              render();
-            };
-          });
-          var qz = state.studentMaterialQuiz;
-          if (qz && qz.list && qz.list.length) {
-            root.querySelectorAll('[data-mat-opt]').forEach(function (ob) {
-              ob.onclick = function () {
-                if (qz.answered) return;
-                qz.pick = parseInt(ob.getAttribute('data-mat-opt'), 10);
-                render();
-              };
-            });
-            var sub = document.getElementById('btnMatSubmit');
-            if (sub) {
-              sub.onclick = function () {
-                if (qz.pick == null || qz.answered) return;
-                var cur = qz.list[qz.idx];
-                qz.answered = true;
-                if (qz.pick === cur.answerIndex) qz.score++;
-                render();
-              };
-            }
-            var nx = document.getElementById('btnMatNext');
-            if (nx) {
-              nx.onclick = function () {
-                qz.idx++;
-                qz.answered = false;
-                qz.pick = null;
-                render();
-              };
-            }
-            var rs = document.getElementById('btnMatRestart');
-            if (rs) {
-              rs.onclick = function () {
-                state.studentMaterialQuiz = null;
-                render();
-              };
-            }
-          }
-          var rMat = document.getElementById('btnMatRetry');
-          if (rMat) {
-            rMat.onclick = function () {
-              state.studentMaterialError = '';
-              delete state.studentMaterialCache[mfMat.id];
-              state.studentMaterialLoading = false;
-              render();
-            };
-          }
-          return;
-        }
+        
 
         // 学生端 · 班级浏览 / 入班 / 录音打卡
         if (PORTAL === 'student' && state.mainChoice === 'studentClassrooms' && currentUser) {
@@ -4019,7 +4535,7 @@
               '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:1rem">' +
               '<div style="flex:1;min-width:220px">' +
               '<h1>坚持，是学习最好的捷径 ✨</h1>' +
-              '<p style="margin:0">登录后加入班级、完成录音打卡与趣味练习，进度将与账号同步。</p>' +
+              '<p style="margin:0">登录后加入班级、完成录音打卡与四模块练习进度，账号可同步展示。</p>' +
               '</div>' +
               '<div style="width:100%;max-width:280px">' +
               '<div class="stu-home-progress-track"><div class="stu-home-progress-fill" style="width:28%"></div></div>' +
@@ -4034,7 +4550,7 @@
               '<section class="stu-home-quick-grid">' +
               '<div class="stu-home-qcard" data-action="guestNeedLogin"><div class="ico" aria-hidden="true">🎤</div><h3>立即打卡</h3><p>登录并加入班级后提交录音</p></div>' +
               '<div class="stu-home-qcard" data-action="guestGoBank"><div class="ico" aria-hidden="true">📚</div><h3>进入题库</h3><p>浏览题库（部分内容需登录）</p></div>' +
-              '<div class="stu-home-qcard" data-action="guestGoPractice"><div class="ico" aria-hidden="true">✏️</div><h3>开始练习</h3><p>趣味 Example 与语法闯关</p></div>' +
+              '<div class="stu-home-qcard" data-action="guestGoPractice"><div class="ico" aria-hidden="true">✏️</div><h3>开始练习</h3><p>举例 · 解释 · 审题 · 话题词汇</p></div>' +
               '</section>' +
               '<section class="stu-home-tip">' +
               '<h2><span aria-hidden="true">💡</span>今日学习小贴士</h2>' +
@@ -4522,7 +5038,7 @@
           var streakPrimaryHtml = streakBadgeEarned
             ? '<p style="margin:0;line-height:1.55">你已解锁「<strong>持续练习勋章</strong>」——连续打卡满 ' +
               goal +
-              ' 天（趣味 Example + 班级录音合并统计）。继续保持！✨</p>'
+              ' 天（举例练习打卡 + 班级录音合并统计）。继续保持！✨</p>'
             : '<p style="margin:0;line-height:1.55">你已经连续打卡 <span class="stu-home-accent">' +
               streakDays +
               '</span> 天，再坚持 <strong>' +
