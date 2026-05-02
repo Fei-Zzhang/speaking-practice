@@ -1056,34 +1056,6 @@
         return m ? m[1].trim() : '';
       }
 
-      /** example-practice.text：同源优先；支持 Part 1 Example Match 或 ## Day 语法；?examplePractice= 覆盖 URL */
-      function examplePracticeFetchUrlList() {
-        var list = [];
-        function add(u) {
-          if (!u) return;
-          var s = String(u).trim();
-          if (list.indexOf(s) === -1) list.push(s);
-        }
-        try {
-          var sp = new URLSearchParams(window.location.search || '');
-          var ov = sp.get('examplePractice');
-          if (ov && /^https?:\/\//i.test(String(ov).trim())) add(String(ov).trim());
-        } catch (_e) {}
-        add(resolveMaterialFileUrl('example-practice.text'));
-        var brs = ['main', 'master'];
-        var bi;
-        for (bi = 0; bi < brs.length; bi++) {
-          var br = brs[bi];
-          add(
-            'https://raw.githubusercontent.com/Fei-Zzhang/speaking-practice/' +
-              br +
-              '/example-practice.text'
-          );
-          add('https://cdn.jsdelivr.net/gh/Fei-Zzhang/speaking-practice@' + br + '/example-practice.text');
-        }
-        return list;
-      }
-
       /** 举例：Example Match 块或按日语法合并为平面 MCQ 列表 */
       function parseExamplePracticeWeb(fullText) {
         var t = String(fullText || '');
@@ -8879,8 +8851,6 @@
           }
           return;
         }
-
-        render();
       }
 
       render();
