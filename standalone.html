@@ -3739,7 +3739,7 @@
               var cls = 'material-game-opt';
               if (rev) {
                 if (oi === qCur.answerIndex) cls += ' correct';
-                else if pk === oi && oi !== qCur.answerIndex) cls += ' wrong';
+                else if (pk === oi && oi !== qCur.answerIndex) cls += ' wrong';
               } else if (pk === oi) cls += ' picked';
               optsHtml +=
                 '<button type="button" class="' +
