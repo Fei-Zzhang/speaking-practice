@@ -1410,6 +1410,41 @@
         return list;
       }
 
+      /** 头脑风暴 · 话题专用词汇 → 四维度词条（Money / Time and Space / Health and Safety / Relationship） */
+      function parseBrainstormTopicVocabByDim(vocabRaw) {
+        var out = { money: [], timeAndSpace: [], healthAndSafety: [], relationship: [] };
+        function headerToKey(line) {
+          var t = String(line || '').replace(/\u2003/g, ' ').trim();
+          if (t === 'Money') return 'money';
+          if (t === 'Time and Space') return 'timeAndSpace';
+          if (t === 'Health and Safety') return 'healthAndSafety';
+          if (t === 'Relationship') return 'relationship';
+          return null;
+        }
+        var lines = String(vocabRaw || '').split(/\r?\n/);
+        var cur = null;
+        var i;
+        for (i = 0; i < lines.length; i++) {
+          var hk = headerToKey(lines[i]);
+          if (hk) {
+            cur = hk;
+            continue;
+          }
+          if (!cur) continue;
+          var bm = lines[i].match(/^\s*[•\-\*·]\s*(.+)$/);
+          if (out[cur] && bm) out[cur].push(bm[1].trim());
+        }
+        return out;
+      }
+
+      /** 转盘维度顺序（与抽选结果 key 一致）：Money → Time → Relationship → Health */
+      var BRAINSTORM_WHEEL_DIMS = [
+        { key: 'money', label: 'Money' },
+        { key: 'timeAndSpace', label: 'Time and Space' },
+        { key: 'relationship', label: 'Relationship' },
+        { key: 'healthAndSafety', label: 'Health and Safety' },
+      ];
+
       /** 头脑风暴 · brainstorrming_practice.text（话题 + 开放式题目 + 话题专用词汇） */
       function parseBrainstormingPractice(fullText) {
         var text = String(fullText || '');
@@ -1452,6 +1487,7 @@
             title: matches[i].title,
             questions: qs,
             vocabRaw: vocabRaw,
+            vocabByDim: parseBrainstormTopicVocabByDim(vocabRaw),
           });
         }
         return { preamble: preamble, topics: topics };
@@ -1626,6 +1662,16 @@
         studentBrainstormQIx: 0,
         studentBrainstormShowPreamble: false,
         studentBrainstormShowVocab: false,
+        /** 头脑风暴练习流：topics 选话题卡 | session 题目页 */
+        studentBrainstormScreen: 'topics',
+        studentBrainstormHintKey: null,
+        studentBrainstormTranscript: '',
+        studentBrainstormRec: null,
+        studentBrainstormWheelOpen: false,
+        studentBrainstormWheelSpinning: false,
+        studentBrainstormWheelRotation: 0,
+        studentBrainstormWheelResultIx: null,
+        studentBrainstormSubmitBusy: false,
         mockPart: null,
         sectionId: null,
         mcqAnswers: {}, mcqScore: 0, transcript: '', editCount: 0, isEditing: false, finalText: '', phase: 'idle', secondsLeft: SPEAKING_DURATION,
@@ -2632,6 +2678,18 @@
           if (callback) callback(null, 'local');
         }
       }
+      function stopStudentBrainstormRecognition() {
+        if (!state.studentBrainstormRec) return;
+        try {
+          state.studentBrainstormRec.stop();
+        } catch (_e) {}
+        try {
+          state.studentBrainstormRec.onresult = null;
+          state.studentBrainstormRec.onerror = null;
+          state.studentBrainstormRec.onend = null;
+        } catch (_e2) {}
+        state.studentBrainstormRec = null;
+      }
       function escapeHtml(s) {
         const div = document.createElement('div');
         div.textContent = s;
@@ -3422,6 +3480,15 @@
               btn.onclick = function () {
                 var k = btn.getAttribute('data-hub-go');
                 if (k === 'example') state.studentFunForceSyncProgress = true;
+                if (k === 'brainstorm') {
+                  stopStudentBrainstormRecognition();
+                  state.studentBrainstormScreen = 'topics';
+                  state.studentBrainstormWheelOpen = false;
+                  state.studentBrainstormWheelSpinning = false;
+                  state.studentBrainstormHintKey = null;
+                  state.studentBrainstormTranscript = '';
+                  state.studentBrainstormSubmitBusy = false;
+                }
                 persistPracticeSection(k);
                 render();
               };
@@ -4075,6 +4142,7 @@
                 state.studentBrainstormError = '';
                 state.studentBrainstormParsed = null;
                 state.studentBrainstormRaw = '';
+                state.studentBrainstormScreen = 'topics';
                 render();
               };
               root.querySelector('[data-practice-hub-back-bs]').onclick = function () {
@@ -4085,6 +4153,9 @@
             }
             var parsedBs = state.studentBrainstormParsed;
             var topicsBs = parsedBs.topics;
+            var scrBs = state.studentBrainstormScreen;
+            if (scrBs !== 'topics' && scrBs !== 'session') scrBs = 'topics';
+            state.studentBrainstormScreen = scrBs;
             var tiBs = state.studentBrainstormTopicIx;
             if (tiBs < 0 || tiBs >= topicsBs.length) tiBs = 0;
             state.studentBrainstormTopicIx = tiBs;
@@ -4095,39 +4166,11 @@
             else if (qiBs < 0 || qiBs >= qsBs.length) qiBs = 0;
             state.studentBrainstormQIx = qiBs;
             var qCurBs = qsBs.length ? qsBs[qiBs] : null;
-            var optTopics = '';
-            var oti;
-            for (oti = 0; oti < topicsBs.length; oti++) {
-              optTopics +=
-                '<option value="' +
-                oti +
-                '"' +
-                (oti === tiBs ? ' selected' : '') +
-                '>话题 ' +
-                topicsBs[oti].num +
-                ' · ' +
-                escapeHtml(topicsBs[oti].title) +
-                '</option>';
-            }
-            var optQs = '';
-            if (!qsBs.length) {
-              optQs = '<option value="0">（该话题暂无题目）</option>';
-            } else {
-              var oqi;
-              for (oqi = 0; oqi < qsBs.length; oqi++) {
-                var stemShort = qsBs[oqi].stem || '';
-                var stemDisp = stemShort.length > 80 ? stemShort.slice(0, 80) + '…' : stemShort;
-                optQs +=
-                  '<option value="' +
-                  oqi +
-                  '"' +
-                  (oqi === qiBs ? ' selected' : '') +
-                  '>' +
-                  (qsBs[oqi].n || oqi + 1) +
-                  '. ' +
-                  escapeHtml(stemDisp) +
-                  '</option>';
-              }
+            var uDispBs = '';
+            try {
+              uDispBs = getCurrentUser() || '未登录';
+            } catch (_u0) {
+              uDispBs = '—';
             }
             var preBtn = parsedBs.preamble
               ? '<button type="button" data-bs-toggle-preamble class="text-sm text-primary font-medium hover:underline">' +
@@ -4141,119 +4184,435 @@
                 escapeHtml(parsedBs.preamble) +
                 '</div>';
             }
-            var vocabBtn = tCur.vocabRaw
-              ? '<button type="button" data-bs-toggle-vocab class="text-sm text-primary font-medium hover:underline">' +
-                (state.studentBrainstormShowVocab ? '收起' : '展开') +
-                ' · 本话题专用词汇</button>'
-              : '';
-            var vocabHtml = '';
-            if (tCur.vocabRaw && state.studentBrainstormShowVocab) {
-              vocabHtml =
-                '<div class="mt-3 material-text-body max-h-[min(50vh,400px)] text-sm">' +
-                escapeHtml(tCur.vocabRaw) +
-                '</div>';
-            }
-            var anglesHtml = '';
-            if (qCurBs && qCurBs.angles) {
-              anglesHtml =
-                '<p class="text-sm text-gray-500 mt-4"><span class="font-medium text-gray-600">思考角度</span> · ' +
-                escapeHtml(qCurBs.angles) +
-                '</p>';
-            }
-            var stemHtml = qCurBs
-              ? '<p class="text-lg text-gray-800 leading-relaxed">' +
-                escapeHtml(qCurBs.stem) +
-                '</p>'
-              : '<p class="text-gray-500">请在上方选择题目。</p>';
             try {
               document.title = "fei's studio · 头脑风暴";
             } catch (_tbs) {}
+
+            function brainstormVocabByDimForTopic(t) {
+              if (!t) return { money: [], timeAndSpace: [], healthAndSafety: [], relationship: [] };
+              if (t.vocabByDim) return t.vocabByDim;
+              return parseBrainstormTopicVocabByDim(t.vocabRaw || '');
+            }
+
+            if (scrBs === 'topics') {
+              var cardsHtml = '';
+              var ci;
+              for (ci = 0; ci < topicsBs.length; ci++) {
+                var tci = topicsBs[ci];
+                var nq = (tci.questions && tci.questions.length) || 0;
+                cardsHtml +=
+                  '<button type="button" data-bs-pick-topic="' +
+                  ci +
+                  '" class="text-left bg-white rounded-2xl p-4 sm:p-5 practice-tw-cardshadow border border-gray-100 hover:border-primary transition-all practice-tw-btnlift">' +
+                  '<span class="text-primary font-bold text-sm">话题 ' +
+                  tci.num +
+                  '</span>' +
+                  '<span class="block text-gray-900 font-semibold mt-2 leading-snug">' +
+                  escapeHtml(tci.title) +
+                  '</span>' +
+                  '<span class="block text-xs text-gray-500 mt-2">' +
+                  nq +
+                  ' 道开放题</span></button>';
+              }
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
+                '<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-2">' +
+                '<div><h1 class="text-2xl font-bold text-gray-800 flex items-center">' +
+                '<i class="fa fa-bolt text-primary mr-3" aria-hidden="true"></i>头脑风暴练习</h1>' +
+                '<p class="text-gray-500 mt-1 text-sm">选择话题 · 题目居中 · 提示转盘 · 口述提交归档</p></div></div>' +
+                (preBtn ? '<div class="mb-4">' + preBtn + preHtml + '</div>' : '') +
+                '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-8">' +
+                cardsHtml +
+                '</div>' +
+                '<div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">' +
+                '<button type="button" data-practice-hub-back-bs class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
+                '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
+                '<div class="text-gray-500 text-sm text-center sm:text-right"><span class="text-primary font-medium">' +
+                escapeHtml(uDispBs) +
+                '</span> · 学习账号</div></div>' +
+                '<footer class="mt-10 pt-6 border-t border-gray-100 text-center text-gray-500 text-sm"><p>© 2026 fei\'s studio | 让学习更有动力</p></footer>' +
+                '</div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-practice-hub-back-bs]').onclick = function () {
+                stopStudentBrainstormRecognition();
+                persistPracticeSection('hub');
+                render();
+              };
+              if (preBtn) {
+                var tp0 = root.querySelector('[data-bs-toggle-preamble]');
+                if (tp0) {
+                  tp0.onclick = function () {
+                    state.studentBrainstormShowPreamble = !state.studentBrainstormShowPreamble;
+                    render();
+                  };
+                }
+              }
+              var pi0;
+              for (pi0 = 0; pi0 < topicsBs.length; pi0++) {
+                (function (idx) {
+                  var btn = root.querySelector('[data-bs-pick-topic="' + idx + '"]');
+                  if (btn) {
+                    btn.onclick = function () {
+                      stopStudentBrainstormRecognition();
+                      state.studentBrainstormTopicIx = idx;
+                      state.studentBrainstormQIx = 0;
+                      state.studentBrainstormScreen = 'session';
+                      state.studentBrainstormHintKey = null;
+                      state.studentBrainstormTranscript = '';
+                      state.studentBrainstormWheelOpen = false;
+                      state.studentBrainstormWheelSpinning = false;
+                      render();
+                    };
+                  }
+                })(pi0);
+              }
+              return;
+            }
+
+            var vbdCur = brainstormVocabByDimForTopic(tCur);
+            var hintKey = state.studentBrainstormHintKey;
+            var hintLabel = '';
+            if (hintKey) {
+              var di;
+              for (di = 0; di < BRAINSTORM_WHEEL_DIMS.length; di++) {
+                if (BRAINSTORM_WHEEL_DIMS[di].key === hintKey) {
+                  hintLabel = BRAINSTORM_WHEEL_DIMS[di].label;
+                  break;
+                }
+              }
+            }
+            var hintTerms = hintKey && vbdCur[hintKey] ? vbdCur[hintKey] : [];
+            var hintBlock = '';
+            if (hintKey && hintLabel) {
+              var chips = '';
+              var hi;
+              for (hi = 0; hi < hintTerms.length; hi++) {
+                chips +=
+                  '<span class="inline-block text-xs sm:text-sm px-2.5 py-1 rounded-full bg-primary/10 text-gray-800 border border-primary/20 mr-2 mb-2">' +
+                  escapeHtml(hintTerms[hi]) +
+                  '</span>';
+              }
+              hintBlock =
+                '<div class="mt-8 max-w-xl mx-auto text-left">' +
+                '<p class="text-sm font-medium text-gray-600 mb-2">词汇补充 · ' +
+                escapeHtml(hintLabel) +
+                '</p>' +
+                '<div class="flex flex-wrap">' +
+                chips +
+                '</div></div>';
+            }
+            var stemHtml =
+              qCurBs ?
+                '<p class="text-xl sm:text-2xl text-gray-900 leading-relaxed font-medium">' +
+                escapeHtml(qCurBs.stem) +
+                '</p>'
+              : '<p class="text-gray-500">该话题暂无题目。</p>';
+            var navQ =
+              qsBs.length > 1 ?
+                '<div class="flex justify-center items-center gap-3 mt-6 text-sm">' +
+                '<button type="button" data-bs-q-prev class="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40" ' +
+                (qiBs <= 0 ? ' disabled' : '') +
+                '>上一题</button>' +
+                '<span class="text-gray-500">第 <strong class="text-primary">' +
+                (qiBs + 1) +
+                '</strong> / ' +
+                qsBs.length +
+                ' 题</span>' +
+                '<button type="button" data-bs-q-next class="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40" ' +
+                (qiBs >= qsBs.length - 1 ? ' disabled' : '') +
+                '>下一题</button></div>'
+              : '';
+            var recActive = !!state.studentBrainstormRec;
+            var trLen = (state.studentBrainstormTranscript || '').replace(/\s+/g, '').length;
+            var recHint =
+              recActive ?
+                '<p class="text-sm text-amber-700 mt-3">正在聆听（转写不会显示在页面上）</p>'
+              : trLen ?
+                '<p class="text-sm text-green-700 mt-3">已采集语音，可提交或重新录制</p>'
+              : '<p class="text-sm text-gray-500 mt-3">使用浏览器语音识别，请允许麦克风权限</p>';
+            var recBtnLabel = recActive ? '停止录制' : '开始录制';
+            var submitRow = '';
+            if (!recActive && trLen && qCurBs) {
+              if (state.studentBrainstormSubmitBusy) {
+                submitRow =
+                  '<div class="mt-4 flex justify-center text-primary text-sm font-medium">正在提交…</div>';
+              } else {
+                submitRow =
+                  '<div class="mt-4 flex justify-center">' +
+                  '<button type="button" data-bs-submit class="inline-flex items-center justify-center bg-primary text-white px-8 py-3 rounded-xl font-medium practice-tw-btnlift shadow-lg shadow-primary/25">' +
+                  '<i class="fa fa-cloud-upload mr-2" aria-hidden="true"></i>提交到练习记录</button></div>';
+              }
+            }
+            var wRot = state.studentBrainstormWheelRotation || 0;
+            var wheelModal = '';
+            if (state.studentBrainstormWheelOpen) {
+              wheelModal =
+                '<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4" data-bs-wheel-backdrop>' +
+                '<div class="bg-white rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-gray-100 relative">' +
+                '<button type="button" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-xl leading-none" data-bs-wheel-close aria-label="关闭">×</button>' +
+                '<h3 class="text-lg font-bold text-gray-900 text-center mb-1">切入点转盘</h3>' +
+                '<p class="text-xs text-gray-500 text-center mb-6">Money · Time and Space · Relationship · Health and Safety</p>' +
+                '<div class="relative w-56 h-56 mx-auto mb-6">' +
+                '<div class="absolute -top-0 left-1/2 -translate-x-1/2 z-20 text-primary text-2xl leading-none" style="transform:translateX(-50%)">▼</div>' +
+                '<div data-bs-wheel-disk class="w-56 h-56 rounded-full shadow-lg border-4 border-white" style="transform:rotate(' +
+                wRot +
+                'deg);background:conic-gradient(from 0deg,#c084fc 0deg 90deg,#818cf8 90deg 180deg,#34d399 180deg 270deg,#fbbf24 270deg 360deg)"></div>' +
+                '<div class="absolute inset-0 flex items-center justify-center pointer-events-none">' +
+                '<div class="w-16 h-16 rounded-full bg-white/90 shadow flex items-center justify-center text-xs font-bold text-gray-700">GO</div></div></div>' +
+                '<p class="text-xs text-center text-gray-500 mb-4">点击转动，将为本题抽选一个思考维度并显示本话题下的相关词汇。</p>' +
+                '<button type="button" data-bs-wheel-spin class="w-full py-3 rounded-xl font-medium text-white bg-primary practice-tw-btnlift disabled:opacity-50" ' +
+                (state.studentBrainstormWheelSpinning ? ' disabled' : '') +
+                '>' +
+                (state.studentBrainstormWheelSpinning ? '转动中…' : '转动转盘') +
+                '</button></div></div>';
+            }
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
-              '<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-2">' +
-              '<div><h1 class="text-2xl font-bold text-gray-800 flex items-center">' +
-              '<i class="fa fa-bolt text-primary mr-3" aria-hidden="true"></i>头脑风暴练习</h1>' +
-              '<p class="text-gray-500 mt-1 text-sm">brainstorrming_practice.text · 开放式口语题</p></div></div>' +
-              (preBtn ? '<div class="mb-4">' + preBtn + preHtml + '</div>' : '') +
-              '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">' +
-              '<div><label class="block text-gray-700 mb-2 text-sm font-medium" for="brainstormTopicSel">选择话题</label>' +
-              '<select id="brainstormTopicSel" class="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-gray-800">' +
-              optTopics +
-              '</select></div>' +
-              '<div><label class="block text-gray-700 mb-2 text-sm font-medium" for="brainstormQSel">选择题目</label>' +
-              '<select id="brainstormQSel" class="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-gray-800"' +
-              (qsBs.length ? '' : ' disabled') +
-              '>' +
-              optQs +
-              '</select></div></div>' +
-              '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-gray-100 mb-6">' +
-              '<div class="flex flex-wrap justify-between items-center gap-2 mb-4 text-sm text-gray-500">' +
-              '<span>话题 <strong class="text-gray-800">' +
+              '<div class="practice-tw-main max-w-3xl mx-auto px-4 py-6 sm:py-8">' +
+              '<div class="flex flex-wrap items-center justify-between gap-3 mb-6">' +
+              '<button type="button" data-bs-back-topics class="inline-flex items-center text-sm text-primary font-medium hover:underline">' +
+              '<i class="fa fa-th-large mr-1.5" aria-hidden="true"></i>全部话题</button>' +
+              '<span class="text-sm text-gray-500">话题 <strong class="text-gray-800">' +
               tCur.num +
               '</strong> · ' +
               escapeHtml(tCur.title) +
-              '</span>' +
-              '<span>' +
-              (qsBs.length
-                ? '第 <strong class="text-primary">' +
-                  (qiBs + 1) +
-                  '</strong> / ' +
-                  qsBs.length +
-                  ' 题'
-                : '') +
               '</span></div>' +
+              (preBtn ? '<div class="mb-4">' + preBtn + preHtml + '</div>' : '') +
+              '<div class="min-h-[40vh] flex flex-col items-center justify-center text-center px-2">' +
               stemHtml +
-              anglesHtml +
-              (vocabBtn ? '<div class="mt-4 pt-4 border-t border-gray-100">' + vocabBtn + vocabHtml + '</div>' : '') +
+              navQ +
+              hintBlock +
+              '<div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md">' +
+              '<button type="button" data-bs-hint-wheel class="inline-flex items-center justify-center w-full sm:w-auto min-w-[10rem] px-6 py-3.5 rounded-xl border-2 border-amber-200 bg-amber-50 text-amber-900 font-medium practice-tw-btnlift">' +
+              '💡 提示</button>' +
+              '<button type="button" data-bs-rec-toggle class="inline-flex items-center justify-center w-full sm:w-auto min-w-[10rem] px-6 py-3.5 rounded-xl bg-gray-900 text-white font-medium practice-tw-btnlift">' +
+              recBtnLabel +
+              '</button></div>' +
+              recHint +
+              submitRow +
               '</div>' +
-              '<div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-2">' +
+              '<div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mt-12">' +
               '<button type="button" data-practice-hub-back-bs class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
               '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
-              '<p class="text-gray-600 text-sm text-center sm:text-right">可在草稿纸或笔记本中延伸「我的思路」，并录音回听改进。</p></div>' +
+              '<div class="text-gray-500 text-sm text-center sm:text-right"><span class="text-primary font-medium">' +
+              escapeHtml(uDispBs) +
+              '</span> · 口述记录同步至云端（需登录）</div></div>' +
               '<div class="mt-8 bg-secondary/30 rounded-2xl p-6">' +
               '<h3 class="font-bold text-lg mb-2 flex items-center text-gray-800">' +
-              '<i class="fa fa-lightbulb-o text-primary mr-2" aria-hidden="true"></i>学习小贴士</h3>' +
-              '<p class="text-gray-700 text-sm leading-relaxed">可先选定 Money / Time and Space / Health and Safety / Relationship 之一组织回答，再打开「本话题专用词汇」丰富用词。</p></div>' +
+              '<i class="fa fa-lightbulb-o text-primary mr-2" aria-hidden="true"></i>说明</h3>' +
+              '<p class="text-gray-700 text-sm leading-relaxed">提示转盘抽取四大切入点之一，仅展示该维度下的「话题专用词汇」；口述过程使用浏览器语音识别，页面不显示原文，完成后提交即写入你的练习记录，教师可在后台按账号查阅。</p></div>' +
               '<footer class="mt-10 pt-6 border-t border-gray-100 text-center text-gray-500 text-sm"><p>© 2026 fei\'s studio | 让学习更有动力</p></footer>' +
-              '</div>';
+              '</div>' +
+              wheelModal;
             bindStudentTopNav(root);
+            function brainstormResetQuestionExtras() {
+              stopStudentBrainstormRecognition();
+              state.studentBrainstormTranscript = '';
+              state.studentBrainstormHintKey = null;
+            }
+            root.querySelector('[data-bs-back-topics]').onclick = function () {
+              brainstormResetQuestionExtras();
+              state.studentBrainstormScreen = 'topics';
+              state.studentBrainstormWheelOpen = false;
+              render();
+            };
             root.querySelector('[data-practice-hub-back-bs]').onclick = function () {
+              brainstormResetQuestionExtras();
+              state.studentBrainstormScreen = 'topics';
               persistPracticeSection('hub');
               render();
             };
             if (preBtn) {
-              var tp = root.querySelector('[data-bs-toggle-preamble]');
-              if (tp) {
-                tp.onclick = function () {
+              var tp1 = root.querySelector('[data-bs-toggle-preamble]');
+              if (tp1) {
+                tp1.onclick = function () {
                   state.studentBrainstormShowPreamble = !state.studentBrainstormShowPreamble;
                   render();
                 };
               }
             }
-            if (vocabBtn) {
-              var tv = root.querySelector('[data-bs-toggle-vocab]');
-              if (tv) {
-                tv.onclick = function () {
-                  state.studentBrainstormShowVocab = !state.studentBrainstormShowVocab;
-                  render();
-                };
-              }
-            }
-            var btSel = root.querySelector('#brainstormTopicSel');
-            if (btSel) {
-              btSel.onchange = function () {
-                state.studentBrainstormTopicIx = parseInt(btSel.value, 10) || 0;
-                state.studentBrainstormQIx = 0;
-                state.studentBrainstormShowVocab = false;
+            var prevB = root.querySelector('[data-bs-q-prev]');
+            if (prevB) {
+              prevB.onclick = function () {
+                if (qiBs <= 0) return;
+                brainstormResetQuestionExtras();
+                state.studentBrainstormQIx = qiBs - 1;
                 render();
               };
             }
-            var bqSel = root.querySelector('#brainstormQSel');
-            if (bqSel) {
-              bqSel.onchange = function () {
-                state.studentBrainstormQIx = parseInt(bqSel.value, 10) || 0;
+            var nextB = root.querySelector('[data-bs-q-next]');
+            if (nextB) {
+              nextB.onclick = function () {
+                if (qiBs >= qsBs.length - 1) return;
+                brainstormResetQuestionExtras();
+                state.studentBrainstormQIx = qiBs + 1;
                 render();
+              };
+            }
+            var hintB = root.querySelector('[data-bs-hint-wheel]');
+            if (hintB) {
+              hintB.onclick = function () {
+                state.studentBrainstormWheelOpen = true;
+                state.studentBrainstormWheelSpinning = false;
+                render();
+              };
+            }
+            var rtog = root.querySelector('[data-bs-rec-toggle]');
+            if (rtog) {
+              rtog.onclick = function () {
+                if (state.studentBrainstormRec) {
+                  stopStudentBrainstormRecognition();
+                  render();
+                  return;
+                }
+                var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SR) {
+                  alert('当前浏览器不支持 Web Speech 识别，请使用 Chrome / Edge 等 Chromium 浏览器。');
+                  return;
+                }
+                stopStudentBrainstormRecognition();
+                state.studentBrainstormTranscript = '';
+                var rec = new SR();
+                rec.continuous = true;
+                rec.interimResults = false;
+                rec.lang = 'en-US';
+                rec.onresult = function (ev) {
+                  var t = '';
+                  var ri;
+                  for (ri = ev.resultIndex; ri < ev.results.length; ri++) {
+                    if (ev.results[ri].isFinal) {
+                      t += ev.results[ri][0].transcript + ' ';
+                    }
+                  }
+                  state.studentBrainstormTranscript =
+                    (state.studentBrainstormTranscript + ' ' + t).replace(/\s+/g, ' ').trim();
+                };
+                rec.onerror = function () {
+                  stopStudentBrainstormRecognition();
+                  render();
+                };
+                rec.onend = function () {
+                  if (state.studentBrainstormRec === rec) state.studentBrainstormRec = null;
+                  render();
+                };
+                try {
+                  rec.start();
+                  state.studentBrainstormRec = rec;
+                } catch (_se) {
+                  alert('无法启动语音识别，请检查麦克风权限。');
+                }
+                render();
+              };
+            }
+            var subB = root.querySelector('[data-bs-submit]');
+            if (subB) {
+              subB.onclick = function () {
+                if (state.studentBrainstormSubmitBusy) return;
+                if (!getCurrentUser()) {
+                  alert('请先登录学生账号后再提交，以便归档到教师端练习记录。');
+                  return;
+                }
+                if (!qCurBs) return;
+                var transcript = (state.studentBrainstormTranscript || '').trim();
+                if (!transcript) {
+                  alert('没有采集到口述内容，请先录制。');
+                  return;
+                }
+                state.studentBrainstormSubmitBusy = true;
+                render();
+                var sectionId =
+                  'brainstorm-t' + tCur.num + '-q' + (qCurBs.n != null ? qCurBs.n : qiBs + 1);
+                var sectionTitle =
+                  '头脑风暴 · ' + tCur.title + ' · Q' + (qCurBs.n != null ? qCurBs.n : qiBs + 1);
+                var dimLabel = '';
+                if (state.studentBrainstormHintKey) {
+                  var dj;
+                  for (dj = 0; dj < BRAINSTORM_WHEEL_DIMS.length; dj++) {
+                    if (BRAINSTORM_WHEEL_DIMS[dj].key === state.studentBrainstormHintKey) {
+                      dimLabel = BRAINSTORM_WHEEL_DIMS[dj].label;
+                      break;
+                    }
+                  }
+                }
+                saveMockPractice(
+                  {
+                    sectionId: sectionId,
+                    sectionTitle: sectionTitle,
+                    extra: {
+                      type: 'brainstorm',
+                      topicNum: tCur.num,
+                      topicTitle: tCur.title,
+                      questionNum: qCurBs.n != null ? qCurBs.n : qiBs + 1,
+                      questionStem: qCurBs.stem,
+                      hintDimension: state.studentBrainstormHintKey || '',
+                      hintDimensionLabel: dimLabel,
+                      transcript: transcript,
+                      submittedAt: new Date().toISOString(),
+                    },
+                  },
+                  function (err) {
+                    state.studentBrainstormSubmitBusy = false;
+                    if (err) {
+                      alert(err);
+                      render();
+                      return;
+                    }
+                    brainstormResetQuestionExtras();
+                    alert('已提交。教师端可通过练习记录（用户名 + 本节 ID）查阅本次口述归档。');
+                    render();
+                  }
+                );
+              };
+            }
+            var backdrop = root.querySelector('[data-bs-wheel-backdrop]');
+            if (backdrop) {
+              backdrop.onclick = function (e) {
+                if (e.target !== backdrop) return;
+                if (state.studentBrainstormWheelSpinning) return;
+                state.studentBrainstormWheelOpen = false;
+                render();
+              };
+            }
+            var wClose = root.querySelector('[data-bs-wheel-close]');
+            if (wClose) {
+              wClose.onclick = function () {
+                if (state.studentBrainstormWheelSpinning) return;
+                state.studentBrainstormWheelOpen = false;
+                render();
+              };
+            }
+            var disk = root.querySelector('[data-bs-wheel-disk]');
+            var spinBtn = root.querySelector('[data-bs-wheel-spin]');
+            if (disk && spinBtn && !state.studentBrainstormWheelSpinning) {
+              spinBtn.onclick = function () {
+                if (state.studentBrainstormWheelSpinning) return;
+                spinBtn.disabled = true;
+                var winIx = Math.floor(Math.random() * 4);
+                state.studentBrainstormWheelResultIx = winIx;
+                state.studentBrainstormWheelSpinning = true;
+                var base = state.studentBrainstormWheelRotation || 0;
+                var sc = winIx * 90 + 45;
+                var align = ((360 - (sc % 360)) % 360 + 360) % 360;
+                var end = base + 5 * 360 + align;
+                disk.style.transition = 'none';
+                disk.style.transform = 'rotate(' + base + 'deg)';
+                void disk.offsetWidth;
+                disk.style.transition = 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)';
+                disk.style.transform = 'rotate(' + end + 'deg)';
+                state.studentBrainstormWheelRotation = end;
+                disk.addEventListener(
+                  'transitionend',
+                  function onTE(ev) {
+                    if (ev.propertyName !== 'transform') return;
+                    disk.removeEventListener('transitionend', onTE);
+                    state.studentBrainstormWheelSpinning = false;
+                    state.studentBrainstormHintKey = BRAINSTORM_WHEEL_DIMS[winIx].key;
+                    state.studentBrainstormWheelOpen = false;
+                    render();
+                  },
+                  false
+                );
               };
             }
             return;
