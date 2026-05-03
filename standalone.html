@@ -24,6 +24,8 @@
               correct: '#10B981',
               wrong: '#EF4444',
               tip: '#EDE9FE',
+              vocab: '#F0F9FF',
+              sentence: '#F0FDF4',
             },
             fontFamily: {
               sans: ['Inter', 'system-ui', 'PingFang SC', 'sans-serif'],
@@ -147,6 +149,8 @@
     .practice-tw-btnlift:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(99, 102, 241, 0.15); }
     .practice-tw-opt { transition: border-color 0.2s ease, background-color 0.2s ease; }
     .practice-tw-opt:hover:not(:disabled) { border-color: #6366f1; background-color: rgba(99, 102, 241, 0.03); }
+    .practice-tw-section-card { transition: box-shadow 0.2s ease; }
+    .practice-tw-section-card:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); }
     /* 学生 · 学习首页（fei's studio 风格） */
     .stu-home-body { background: #f5f7ff; margin: 0 calc(-1 * clamp(1rem, 4vw, 2.5rem)); padding: 0 clamp(1rem, 4vw, 2.5rem) 2rem; }
     .stu-home-hero {
@@ -1317,6 +1321,52 @@
         }
         sections.push(cur);
         return sections;
+      }
+
+      /** 单 Topic 内：①②③ 维度 + 核心词汇 + 句型模板（匹配 topic_vocab_training.text） */
+      function parseTopicVocabDimensions(lineArr) {
+        var dims = [];
+        var cur = null;
+        var inSentences = false;
+        var li;
+        for (li = 0; li < lineArr.length; li++) {
+          var line = String(lineArr[li] || '');
+          var dimM = line.match(/^\s*([①②③])\s+(.+?)\s*$/);
+          if (dimM) {
+            if (cur) dims.push(cur);
+            cur = { num: dimM[1], title: dimM[2].trim(), vocabs: [], sentences: [] };
+            inSentences = false;
+            continue;
+          }
+          if (!cur) continue;
+          if (/词汇\s*[：:]/.test(line)) {
+            inSentences = false;
+            var afterV = line.replace(/^.*?词汇\s*[：:]\s*/, '');
+            if (afterV.trim()) {
+              afterV.split(/\s*·\s*/).forEach(function (p) {
+                var t = String(p || '').trim();
+                if (t) cur.vocabs.push(t);
+              });
+            }
+            continue;
+          }
+          if (/句型模板\s*[：:]/.test(line)) {
+            inSentences = true;
+            var rest = line.replace(/^.*?句型模板\s*[：:]\s*/, '');
+            if (rest.trim()) {
+              var rm0 = rest.match(/^\s*(\d+)\.\s+(.*)$/);
+              if (rm0) cur.sentences.push(rm0[2].trim());
+            }
+            continue;
+          }
+          var sentM = line.match(/^\s*(\d+)\.\s+(.*)$/);
+          if (sentM && inSentences) {
+            cur.sentences.push(sentM[2].trim());
+            continue;
+          }
+        }
+        if (cur) dims.push(cur);
+        return dims;
       }
 
       function topicVocabTrainingFetchUrlList() {
@@ -3707,20 +3757,25 @@
             if (state.studentTopicVocabLoading) {
               root.innerHTML =
                 studentTopNavHtml() +
-                '<div class="card"><p>正在加载 <code>topic_vocab_training.text</code>…</p></div>';
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-8">' +
+                '<div class="bg-white rounded-2xl p-10 practice-tw-cardshadow border border-gray-100 text-center text-gray-600">' +
+                '正在加载 <code class="text-sm bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">topic_vocab_training.text</code>…</div></div>';
               bindStudentTopNav(root);
               return;
             }
             if (state.studentTopicVocabError) {
               root.innerHTML =
                 studentTopNavHtml() +
-                '<div class="card"><h2 style="margin:0 0 0.75rem">话题词汇 · Topic vocab</h2>' +
-                '<p style="color:var(--wrong)">' +
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-8">' +
+                '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-red-100">' +
+                '<h2 class="text-xl font-bold text-gray-800 mb-3 flex items-center"><i class="fa fa-book text-primary mr-2" aria-hidden="true"></i>话题词汇拓展</h2>' +
+                '<p class="text-red-600 leading-relaxed">' +
                 escapeHtml(state.studentTopicVocabError) +
                 '</p>' +
-                '<div style="margin-top:1rem;display:flex;flex-wrap:wrap;gap:0.5rem">' +
-                '<button type="button" class="primary" data-tv-retry>重试</button>' +
-                '<button type="button" data-practice-hub-back-tv>← 练习首页</button></div></div>';
+                '<div class="mt-6 flex flex-wrap gap-3">' +
+                '<button type="button" class="inline-flex items-center justify-center bg-primary text-white px-6 py-3 rounded-lg font-medium practice-tw-btnlift" data-tv-retry>重试</button>' +
+                '<button type="button" class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200" data-practice-hub-back-tv><i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
+                '</div></div></div>';
               bindStudentTopNav(root);
               root.querySelector('[data-tv-retry]').onclick = function () {
                 state.studentTopicVocabError = '';
@@ -3751,20 +3806,94 @@
                 escapeHtml(secsTv[si].title || 'Topic ' + si) +
                 '</option>';
             }
+            var dimsTv = parseTopicVocabDimensions(secCur.lines || []);
+            var blocksHtml = '';
+            var di;
+            if (dimsTv.length) {
+              for (di = 0; di < dimsTv.length; di++) {
+                var d = dimsTv[di];
+                var isLastDim = di === dimsTv.length - 1;
+                var wrapCls = isLastDim
+                  ? 'practice-tw-section-card'
+                  : 'practice-tw-section-card mb-8 pb-8 border-b border-gray-100';
+                var vocabPills = '';
+                var vi;
+                for (vi = 0; vi < (d.vocabs || []).length; vi++) {
+                  vocabPills +=
+                    '<span class="px-3 py-1 bg-white rounded-full text-sm border border-gray-200 text-gray-800 break-words">' +
+                    escapeHtml(d.vocabs[vi]) +
+                    '</span>';
+                }
+                var sentLis = '';
+                var sj;
+                for (sj = 0; sj < (d.sentences || []).length; sj++) {
+                  sentLis +=
+                    '<li class="leading-relaxed pl-1 break-words">' + escapeHtml(d.sentences[sj]) + '</li>';
+                }
+                var vocabBlock = vocabPills
+                  ? '<div class="bg-vocab rounded-xl p-4 mb-4"><p class="text-sm text-gray-500 mb-2 font-medium">核心词汇</p><div class="flex flex-wrap gap-2">' +
+                    vocabPills +
+                    '</div></div>'
+                  : '';
+                var sentBlock = sentLis
+                  ? '<div class="bg-sentence rounded-xl p-4"><p class="text-sm text-gray-500 mb-2 font-medium">句型模板</p><ol class="list-decimal list-outside space-y-2 text-gray-700 ml-5 sm:ml-6">' +
+                    sentLis +
+                    '</ol></div>'
+                  : '';
+                blocksHtml +=
+                  '<div class="' +
+                  wrapCls +
+                  '">' +
+                  '<div class="flex items-center mb-4 gap-2">' +
+                  '<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">' +
+                  '<span class="font-bold text-sm">' +
+                  escapeHtml(d.num) +
+                  '</span></div>' +
+                  '<h3 class="text-lg font-bold text-gray-800">' +
+                  escapeHtml(d.title) +
+                  '</h3></div>' +
+                  vocabBlock +
+                  sentBlock +
+                  '</div>';
+              }
+            } else {
+              blocksHtml =
+                '<div class="material-text-body max-h-[min(65vh,520px)] whitespace-pre-wrap text-gray-800 text-sm leading-relaxed">' +
+                escapeHtml(bodyTv) +
+                '</div>';
+            }
+            try {
+              document.title = "fei's studio · 话题词汇拓展";
+            } catch (_ttv) {}
+            var uTv = getCurrentUser();
+            var uDisp = uTv ? escapeHtml(uTv) : '访客';
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card">' +
-              '<div class="material-game-head">' +
-              '<strong>话题词汇拓展</strong>' +
-              '<span style="color:var(--muted);font-size:0.88rem"><code style="font-size:0.82em">topic_vocab_training.text</code></span></div>' +
-              '<label style="display:block;margin:0.75rem 0 0.5rem;font-size:0.9rem;color:var(--muted)">选择区块</label>' +
-              '<select id="topicVocabSel" style="max-width:100%;width:min(520px,100%);padding:0.5rem;border-radius:8px;border:1px solid var(--border);font-size:0.92rem">' +
+              '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
+              '<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-2">' +
+              '<div>' +
+              '<h1 class="text-2xl font-bold text-gray-800 flex items-center">' +
+              '<i class="fa fa-book text-primary mr-3" aria-hidden="true"></i>话题词汇拓展</h1>' +
+              '<p class="text-gray-500 mt-1 text-sm">topic_vocab_training.text</p></div></div>' +
+              '<div class="mb-8">' +
+              '<label class="block text-gray-700 mb-2 text-sm font-medium" for="topicVocabSel">选择区块</label>' +
+              '<select id="topicVocabSel" class="w-full md:w-1/2 px-4 py-3 rounded-lg border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-gray-800">' +
               optsSel +
-              '</select>' +
-              '<div class="material-text-body" style="margin-top:1rem;max-height:min(65vh,520px);white-space:pre-wrap">' +
-              escapeHtml(bodyTv) +
+              '</select></div>' +
+              '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-gray-100 mb-8">' +
+              blocksHtml +
               '</div>' +
-              '<button type="button" style="margin-top:1rem" data-practice-hub-back-tv>← 练习首页</button>' +
+              '<div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">' +
+              '<button type="button" data-practice-hub-back-tv class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
+              '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
+              '<div class="text-gray-500 text-sm text-center sm:text-right"><span class="text-primary font-medium">' +
+              uDisp +
+              '</span> · 学习账号</div></div>' +
+              '<div class="mt-8 bg-secondary/30 rounded-2xl p-6">' +
+              '<h3 class="font-bold text-lg mb-2 flex items-center text-gray-800">' +
+              '<i class="fa fa-lightbulb-o text-primary mr-2" aria-hidden="true"></i>学习小贴士</h3>' +
+              '<p class="text-gray-700 text-sm leading-relaxed">建议将这些词汇和句型结合使用，尝试用自己的话复述观点，能更快提升口语表达的丰富度和逻辑性！</p></div>' +
+              '<footer class="mt-10 pt-6 border-t border-gray-100 text-center text-gray-500 text-sm"><p>© 2026 fei\'s studio | 让学习更有动力</p></footer>' +
               '</div>';
             bindStudentTopNav(root);
             root.querySelector('[data-practice-hub-back-tv]').onclick = function () {
