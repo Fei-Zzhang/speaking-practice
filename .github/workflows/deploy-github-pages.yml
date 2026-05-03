@@ -35,6 +35,7 @@ jobs:
           cp mock-grammar-data.js mock-wording-data.js mock-topic-data.js _site/
           cp .nojekyll _site/ 2>/dev/null || touch _site/.nojekyll
           cp grammartestmaterial.text topicdevelopmenttestmaterial.text wordingtestmaterial.text practice-bank.cache.json _site/
+          cp brainstorrming_practice.text _site/
           cp -r "Listen&Repeat练习" _site/
           ls -la _site
           wc -c _site/standalone.html

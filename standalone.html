@@ -803,11 +803,11 @@
         '</ol>';
 
       var HELP_HTML_PRACTICE =
-        '<div class="help-tip-section">练习（四模块）</div>' +
+        '<div class="help-tip-section">练习（五专项）</div>' +
         '<ol class="help-tip-ol">' +
-        '<li>顶栏「练习」仅有四项：<strong>举例</strong>（Example）、<strong>解释</strong>（Reasoning）、<strong>审题</strong>（Read questions）、<strong>话题词汇</strong>（Topic vocab）。</li>' +
-        '<li>四项材料：<code>example-practice.text</code>、<code>reasoning_training_practice.text</code>、<code>question_reading_practice.text</code>、<code>topic_vocab_training.text</code>（与练习四按钮一一对应）。</li>' +
-        '<li>举例 / 审题为 Part 1 四选一；解释为 Logic / Keyword / Sentence 三部分；话题词汇为分 Topic 浏览词库原文。</li>' +
+        '<li>顶栏「练习」含五项：<strong>举例</strong>、<strong>解释</strong>、<strong>审题</strong>、<strong>话题词汇</strong>、<strong>头脑风暴</strong>（开放式话题口述）。</li>' +
+        '<li>材料：<code>example-practice.text</code>、<code>reasoning_training_practice.text</code>、<code>question_reading_practice.text</code>、<code>topic_vocab_training.text</code>、<code>brainstorrming_practice.text</code>。</li>' +
+        '<li>举例 / 审题为四选一；解释为三部分 MCQ；话题词汇为分 Topic 词库；头脑风暴为分话题浏览题目与词汇参考。</li>' +
         '</ol>';
 
       function getStudentHelpKind() {
@@ -1410,6 +1410,84 @@
         return list;
       }
 
+      /** 头脑风暴 · brainstorrming_practice.text（话题 + 开放式题目 + 话题专用词汇） */
+      function parseBrainstormingPractice(fullText) {
+        var text = String(fullText || '');
+        var topicRe = /^话题\s+(\d+)\s*:\s*(.+)$/gm;
+        var matches = [];
+        var m;
+        while ((m = topicRe.exec(text)) !== null) {
+          matches.push({
+            num: parseInt(m[1], 10),
+            title: m[2].trim(),
+            start: m.index,
+            end: 0,
+          });
+        }
+        var preamble = matches.length ? text.slice(0, matches[0].start).trim() : text.trim();
+        var topics = [];
+        var i;
+        for (i = 0; i < matches.length; i++) {
+          matches[i].end = i + 1 < matches.length ? matches[i + 1].start : text.length;
+          var chunk = text.slice(matches[i].start, matches[i].end);
+          var vocabIdx = chunk.indexOf('话题专用词汇');
+          var qPart = vocabIdx >= 0 ? chunk.slice(0, vocabIdx) : chunk;
+          var vocabRaw = vocabIdx >= 0 ? chunk.slice(vocabIdx).trim() : '';
+          var lines = qPart.split(/\r?\n/);
+          var qs = [];
+          var j;
+          for (j = 0; j < lines.length; j++) {
+            var line = lines[j];
+            var qm = line.match(/^\s*(\d+)\.\s+(.+)$/);
+            if (qm) {
+              var angles = '';
+              if (j + 1 < lines.length && /思考角度/.test(lines[j + 1])) {
+                angles = lines[j + 1].replace(/^.*?思考角度[：:]\s*/, '').trim();
+              }
+              qs.push({ n: parseInt(qm[1], 10), stem: qm[2].trim(), angles: angles });
+            }
+          }
+          topics.push({
+            num: matches[i].num,
+            title: matches[i].title,
+            questions: qs,
+            vocabRaw: vocabRaw,
+          });
+        }
+        return { preamble: preamble, topics: topics };
+      }
+
+      function brainstormingPracticeFetchUrlList() {
+        var list = [];
+        function add(u) {
+          if (!u) return;
+          var s = String(u).trim();
+          if (list.indexOf(s) === -1) list.push(s);
+        }
+        try {
+          var sp = new URLSearchParams(window.location.search || '');
+          var ov = sp.get('brainstormingPractice');
+          if (ov && /^https?:\/\//i.test(String(ov).trim())) add(String(ov).trim());
+        } catch (_eB) {}
+        add(resolveMaterialFileUrl('brainstorrming_practice.text'));
+        var brsB = ['main', 'master'];
+        var bi;
+        for (bi = 0; bi < brsB.length; bi++) {
+          var brB = brsB[bi];
+          add(
+            'https://raw.githubusercontent.com/Fei-Zzhang/speaking-practice/' +
+              brB +
+              '/brainstorrming_practice.text'
+          );
+          add(
+            'https://cdn.jsdelivr.net/gh/Fei-Zzhang/speaking-practice@' +
+              brB +
+              '/brainstorrming_practice.text'
+          );
+        }
+        return list;
+      }
+
       /** 趣味 Example：按 ## Day N 拆分块，再解析级别1选择题 */
       function parseExamplePracticeDaySections(fullText) {
         var text = String(fullText || '');
@@ -1493,7 +1571,7 @@
         studentMaterialLoading: false,
         studentMaterialError: '',
         studentMaterialQuiz: null,
-        /** 学生练习分区：hub | example | reasoning | readquestions | topicvocab */
+        /** 学生练习分区：hub | example | reasoning | readquestions | topicvocab | brainstorm */
         studentPracticeSection: 'hub',
         studentFunExampleRaw: null,
         studentFunExampleLoading: false,
@@ -1539,6 +1617,15 @@
         studentTopicVocabSections: null,
         studentTopicVocabSel: 0,
         studentTopicVocabRaw: '',
+        /** 头脑风暴 · brainstorrming_practice.text */
+        studentBrainstormLoading: false,
+        studentBrainstormError: '',
+        studentBrainstormParsed: null,
+        studentBrainstormRaw: '',
+        studentBrainstormTopicIx: 0,
+        studentBrainstormQIx: 0,
+        studentBrainstormShowPreamble: false,
+        studentBrainstormShowVocab: false,
         mockPart: null,
         sectionId: null,
         mcqAnswers: {}, mcqScore: 0, transcript: '', editCount: 0, isEditing: false, finalText: '', phase: 'idle', secondsLeft: SPEAKING_DURATION,
@@ -2151,20 +2238,24 @@
       function practiceHubProgressRead() {
         try {
           var o = JSON.parse(localStorage.getItem(practiceHubProgressStorageKey()) || '{}');
-          var keys = ['example', 'reasoning', 'readquestions', 'topicvocab'];
+          var keys = ['example', 'reasoning', 'readquestions', 'topicvocab', 'brainstorm'];
           var c = 0;
           var ki;
           for (ki = 0; ki < keys.length; ki++) {
             if (o[keys[ki]]) c++;
           }
-          return { count: c, total: 4, keys: keys };
+          return { count: c, total: 5, keys: keys };
         } catch (_) {
-          return { count: 0, total: 4, keys: ['example', 'reasoning', 'readquestions', 'topicvocab'] };
+          return {
+            count: 0,
+            total: 5,
+            keys: ['example', 'reasoning', 'readquestions', 'topicvocab', 'brainstorm'],
+          };
         }
       }
       function practiceHubProgressTouch(sp) {
         if (!sp || sp === 'hub') return;
-        var keys = ['example', 'reasoning', 'readquestions', 'topicvocab'];
+        var keys = ['example', 'reasoning', 'readquestions', 'topicvocab', 'brainstorm'];
         if (keys.indexOf(sp) < 0) return;
         try {
           var o = JSON.parse(localStorage.getItem(practiceHubProgressStorageKey()) || '{}');
@@ -3227,16 +3318,22 @@
               _spSec === 'example' ||
               _spSec === 'reasoning' ||
               _spSec === 'readquestions' ||
-              _spSec === 'topicvocab'
+              _spSec === 'topicvocab' ||
+              _spSec === 'brainstorm'
             ) {
               state.studentPracticeSection = _spSec;
             }
           } catch (_se) {}
           if (
             !state.studentPracticeSection ||
-            ['hub', 'example', 'reasoning', 'readquestions', 'topicvocab'].indexOf(
-              state.studentPracticeSection
-            ) < 0
+            [
+              'hub',
+              'example',
+              'reasoning',
+              'readquestions',
+              'topicvocab',
+              'brainstorm',
+            ].indexOf(state.studentPracticeSection) < 0
           ) {
             state.studentPracticeSection = 'hub';
           }
@@ -3280,17 +3377,19 @@
               '<h1 class="text-3xl font-bold text-gray-800 flex items-center mb-4">' +
               '<i class="fa fa-pencil-square-o text-primary mr-3" aria-hidden="true"></i>练习中心</h1>' +
               '<p class="text-gray-600 leading-relaxed">' +
-              '四项练习材料：<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">example-practice.text</code> · ' +
+              '五项专项：<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">example-practice.text</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">reasoning_training_practice.text</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">question_reading_practice.text</code> · ' +
-              '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">topic_vocab_training.text</code>。<br/>' +
-              '总目录见 <code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">question_reading_practice.text</code> 文首表格。' +
+              '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">topic_vocab_training.text</code> · ' +
+              '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">brainstorrming_practice.text</code>（头脑风暴）。<br/>' +
+              '总目录说明见 <code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">question_reading_practice.text</code> 文首表格。' +
               '</p></div>' +
-              '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">' +
+              '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">' +
               hubCard('example', 'fa-lightbulb-o', '举例练习', 'Example practice') +
               hubCard('reasoning', 'fa-comments', '解释练习', 'Reasoning practice') +
               hubCard('readquestions', 'fa-file-text-o', '审题练习', 'Read questions') +
               hubCard('topicvocab', 'fa-book', '话题词汇拓展', 'Topic vocab') +
+              hubCard('brainstorm', 'fa-bolt', '头脑风暴', 'Brainstorming') +
               '</div>' +
               '<div class="bg-secondary/30 rounded-2xl p-6 mb-4">' +
               '<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">' +
@@ -3916,6 +4015,244 @@
             if (selEl) {
               selEl.onchange = function () {
                 state.studentTopicVocabSel = parseInt(selEl.value, 10) || 0;
+                render();
+              };
+            }
+            return;
+          }
+
+          if (secPr === 'brainstorm') {
+            if (
+              !state.studentBrainstormParsed &&
+              !state.studentBrainstormLoading &&
+              !state.studentBrainstormError
+            ) {
+              state.studentBrainstormLoading = true;
+              fetchFirstOkTextUrls(brainstormingPracticeFetchUrlList(), 0)
+                .then(function (res) {
+                  state.studentBrainstormLoading = false;
+                  state.studentBrainstormRaw = res.text || '';
+                  var parsedB0 = parseBrainstormingPractice(state.studentBrainstormRaw);
+                  if (!parsedB0.topics.length) {
+                    state.studentBrainstormError =
+                      '未能从 brainstorrming_practice.text 解析出「话题 N:」区块。请确认文件含话题标题行。';
+                  } else {
+                    state.studentBrainstormParsed = parsedB0;
+                  }
+                  render();
+                })
+                .catch(function () {
+                  state.studentBrainstormLoading = false;
+                  state.studentBrainstormError =
+                    '无法加载 brainstorrming_practice.text。请将文件与本页放在同一目录，或检查网络与 CORS。';
+                  render();
+                });
+            }
+            if (state.studentBrainstormLoading) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-8">' +
+                '<div class="bg-white rounded-2xl p-10 practice-tw-cardshadow border border-gray-100 text-center text-gray-600">' +
+                '正在加载 <code class="text-sm bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">brainstorrming_practice.text</code>…</div></div>';
+              bindStudentTopNav(root);
+              return;
+            }
+            if (state.studentBrainstormError) {
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-8">' +
+                '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-red-100">' +
+                '<h2 class="text-xl font-bold text-gray-800 mb-3 flex items-center"><i class="fa fa-bolt text-primary mr-2" aria-hidden="true"></i>头脑风暴</h2>' +
+                '<p class="text-red-600 leading-relaxed">' +
+                escapeHtml(state.studentBrainstormError) +
+                '</p>' +
+                '<div class="mt-6 flex flex-wrap gap-3">' +
+                '<button type="button" class="inline-flex items-center justify-center bg-primary text-white px-6 py-3 rounded-lg font-medium practice-tw-btnlift" data-bs-retry>重试</button>' +
+                '<button type="button" class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200" data-practice-hub-back-bs><i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
+                '</div></div></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-bs-retry]').onclick = function () {
+                state.studentBrainstormError = '';
+                state.studentBrainstormParsed = null;
+                state.studentBrainstormRaw = '';
+                render();
+              };
+              root.querySelector('[data-practice-hub-back-bs]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+            var parsedBs = state.studentBrainstormParsed;
+            var topicsBs = parsedBs.topics;
+            var tiBs = state.studentBrainstormTopicIx;
+            if (tiBs < 0 || tiBs >= topicsBs.length) tiBs = 0;
+            state.studentBrainstormTopicIx = tiBs;
+            var tCur = topicsBs[tiBs];
+            var qsBs = tCur.questions || [];
+            var qiBs = state.studentBrainstormQIx;
+            if (qsBs.length === 0) qiBs = 0;
+            else if (qiBs < 0 || qiBs >= qsBs.length) qiBs = 0;
+            state.studentBrainstormQIx = qiBs;
+            var qCurBs = qsBs.length ? qsBs[qiBs] : null;
+            var optTopics = '';
+            var oti;
+            for (oti = 0; oti < topicsBs.length; oti++) {
+              optTopics +=
+                '<option value="' +
+                oti +
+                '"' +
+                (oti === tiBs ? ' selected' : '') +
+                '>话题 ' +
+                topicsBs[oti].num +
+                ' · ' +
+                escapeHtml(topicsBs[oti].title) +
+                '</option>';
+            }
+            var optQs = '';
+            if (!qsBs.length) {
+              optQs = '<option value="0">（该话题暂无题目）</option>';
+            } else {
+              var oqi;
+              for (oqi = 0; oqi < qsBs.length; oqi++) {
+                var stemShort = qsBs[oqi].stem || '';
+                var stemDisp = stemShort.length > 80 ? stemShort.slice(0, 80) + '…' : stemShort;
+                optQs +=
+                  '<option value="' +
+                  oqi +
+                  '"' +
+                  (oqi === qiBs ? ' selected' : '') +
+                  '>' +
+                  (qsBs[oqi].n || oqi + 1) +
+                  '. ' +
+                  escapeHtml(stemDisp) +
+                  '</option>';
+              }
+            }
+            var preBtn = parsedBs.preamble
+              ? '<button type="button" data-bs-toggle-preamble class="text-sm text-primary font-medium hover:underline">' +
+                (state.studentBrainstormShowPreamble ? '收起' : '展开') +
+                ' · 使用说明与四大切入点</button>'
+              : '';
+            var preHtml = '';
+            if (parsedBs.preamble && state.studentBrainstormShowPreamble) {
+              preHtml =
+                '<div class="mt-3 bg-secondary/20 rounded-xl p-4 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">' +
+                escapeHtml(parsedBs.preamble) +
+                '</div>';
+            }
+            var vocabBtn = tCur.vocabRaw
+              ? '<button type="button" data-bs-toggle-vocab class="text-sm text-primary font-medium hover:underline">' +
+                (state.studentBrainstormShowVocab ? '收起' : '展开') +
+                ' · 本话题专用词汇</button>'
+              : '';
+            var vocabHtml = '';
+            if (tCur.vocabRaw && state.studentBrainstormShowVocab) {
+              vocabHtml =
+                '<div class="mt-3 material-text-body max-h-[min(50vh,400px)] text-sm">' +
+                escapeHtml(tCur.vocabRaw) +
+                '</div>';
+            }
+            var anglesHtml = '';
+            if (qCurBs && qCurBs.angles) {
+              anglesHtml =
+                '<p class="text-sm text-gray-500 mt-4"><span class="font-medium text-gray-600">思考角度</span> · ' +
+                escapeHtml(qCurBs.angles) +
+                '</p>';
+            }
+            var stemHtml = qCurBs
+              ? '<p class="text-lg text-gray-800 leading-relaxed">' +
+                escapeHtml(qCurBs.stem) +
+                '</p>'
+              : '<p class="text-gray-500">请在上方选择题目。</p>';
+            try {
+              document.title = "fei's studio · 头脑风暴";
+            } catch (_tbs) {}
+            root.innerHTML =
+              studentTopNavHtml() +
+              '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
+              '<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-2">' +
+              '<div><h1 class="text-2xl font-bold text-gray-800 flex items-center">' +
+              '<i class="fa fa-bolt text-primary mr-3" aria-hidden="true"></i>头脑风暴练习</h1>' +
+              '<p class="text-gray-500 mt-1 text-sm">brainstorrming_practice.text · 开放式口语题</p></div></div>' +
+              (preBtn ? '<div class="mb-4">' + preBtn + preHtml + '</div>' : '') +
+              '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">' +
+              '<div><label class="block text-gray-700 mb-2 text-sm font-medium" for="brainstormTopicSel">选择话题</label>' +
+              '<select id="brainstormTopicSel" class="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-gray-800">' +
+              optTopics +
+              '</select></div>' +
+              '<div><label class="block text-gray-700 mb-2 text-sm font-medium" for="brainstormQSel">选择题目</label>' +
+              '<select id="brainstormQSel" class="w-full px-4 py-3 rounded-lg border border-gray-200 bg-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-gray-800"' +
+              (qsBs.length ? '' : ' disabled') +
+              '>' +
+              optQs +
+              '</select></div></div>' +
+              '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-gray-100 mb-6">' +
+              '<div class="flex flex-wrap justify-between items-center gap-2 mb-4 text-sm text-gray-500">' +
+              '<span>话题 <strong class="text-gray-800">' +
+              tCur.num +
+              '</strong> · ' +
+              escapeHtml(tCur.title) +
+              '</span>' +
+              '<span>' +
+              (qsBs.length
+                ? '第 <strong class="text-primary">' +
+                  (qiBs + 1) +
+                  '</strong> / ' +
+                  qsBs.length +
+                  ' 题'
+                : '') +
+              '</span></div>' +
+              stemHtml +
+              anglesHtml +
+              (vocabBtn ? '<div class="mt-4 pt-4 border-t border-gray-100">' + vocabBtn + vocabHtml + '</div>' : '') +
+              '</div>' +
+              '<div class="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-2">' +
+              '<button type="button" data-practice-hub-back-bs class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
+              '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
+              '<p class="text-gray-600 text-sm text-center sm:text-right">可在草稿纸或 materials 中延伸「我的思路」，并录音回听改进。</p></div>' +
+              '<div class="mt-8 bg-secondary/30 rounded-2xl p-6">' +
+              '<h3 class="font-bold text-lg mb-2 flex items-center text-gray-800">' +
+              '<i class="fa fa-lightbulb-o text-primary mr-2" aria-hidden="true"></i>学习小贴士</h3>' +
+              '<p class="text-gray-700 text-sm leading-relaxed">可先选定 Money / Time and Space / Health and Safety / Relationship 之一组织回答，再打开「本话题专用词汇」丰富用词。</p></div>' +
+              '<footer class="mt-10 pt-6 border-t border-gray-100 text-center text-gray-500 text-sm"><p>© 2026 fei\'s studio | 让学习更有动力</p></footer>' +
+              '</div>';
+            bindStudentTopNav(root);
+            root.querySelector('[data-practice-hub-back-bs]').onclick = function () {
+              persistPracticeSection('hub');
+              render();
+            };
+            if (preBtn) {
+              var tp = root.querySelector('[data-bs-toggle-preamble]');
+              if (tp) {
+                tp.onclick = function () {
+                  state.studentBrainstormShowPreamble = !state.studentBrainstormShowPreamble;
+                  render();
+                };
+              }
+            }
+            if (vocabBtn) {
+              var tv = root.querySelector('[data-bs-toggle-vocab]');
+              if (tv) {
+                tv.onclick = function () {
+                  state.studentBrainstormShowVocab = !state.studentBrainstormShowVocab;
+                  render();
+                };
+              }
+            }
+            var btSel = root.querySelector('#brainstormTopicSel');
+            if (btSel) {
+              btSel.onchange = function () {
+                state.studentBrainstormTopicIx = parseInt(btSel.value, 10) || 0;
+                state.studentBrainstormQIx = 0;
+                state.studentBrainstormShowVocab = false;
+                render();
+              };
+            }
+            var bqSel = root.querySelector('#brainstormQSel');
+            if (bqSel) {
+              bqSel.onchange = function () {
+                state.studentBrainstormQIx = parseInt(bqSel.value, 10) || 0;
                 render();
               };
             }
@@ -4798,7 +5135,7 @@
               '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:1rem">' +
               '<div style="flex:1;min-width:220px">' +
               '<h1>坚持，是学习最好的捷径 ✨</h1>' +
-              '<p style="margin:0">登录后加入班级、完成录音打卡与四模块练习进度，账号可同步展示。</p>' +
+              '<p style="margin:0">登录后加入班级、完成录音打卡与专项练习进度，账号可同步展示。</p>' +
               '</div>' +
               '<div style="width:100%;max-width:280px">' +
               '<div class="stu-home-progress-track"><div class="stu-home-progress-fill" style="width:28%"></div></div>' +
@@ -4813,7 +5150,7 @@
               '<section class="stu-home-quick-grid">' +
               '<div class="stu-home-qcard" data-action="guestNeedLogin"><div class="ico" aria-hidden="true">🎤</div><h3>立即打卡</h3><p>登录并加入班级后提交录音</p></div>' +
               '<div class="stu-home-qcard" data-action="guestGoBank"><div class="ico" aria-hidden="true">📚</div><h3>进入题库</h3><p>浏览题库（部分内容需登录）</p></div>' +
-              '<div class="stu-home-qcard" data-action="guestGoPractice"><div class="ico" aria-hidden="true">✏️</div><h3>开始练习</h3><p>举例 · 解释 · 审题 · 话题词汇</p></div>' +
+              '<div class="stu-home-qcard" data-action="guestGoPractice"><div class="ico" aria-hidden="true">✏️</div><h3>开始练习</h3><p>五专项：举例 · 解释 · 审题 · 词汇 · 头脑风暴</p></div>' +
               '</section>' +
               '<section class="stu-home-tip">' +
               '<h2><span aria-hidden="true">💡</span>今日学习小贴士</h2>' +
