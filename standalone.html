@@ -852,6 +852,18 @@
         );
       }
 
+      /** 学习首页：麦克风图标 + 品牌字（与全站 Tailwind primary 一致） */
+      function studentHomeBrandHtml() {
+        return (
+          '<div class="flex items-center justify-center py-3 mb-1">' +
+          '<div class="flex items-center gap-2">' +
+          '<div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary" aria-hidden="true">' +
+          '<i class="fa fa-microphone"></i></div>' +
+          '<div class="text-xl font-bold text-primary tracking-wide">fei\'s<span class="text-gray-700">studio</span></div>' +
+          '</div></div>'
+        );
+      }
+
       /** 学生顶栏：首页 | 账号(已登录) | 题库 | 练习；未登录时「登录」在右上 */
       function studentTopNavHtml() {
         if (PORTAL !== 'student') return '';
@@ -4781,9 +4793,7 @@
             root.innerHTML =
               studentTopNavHtml() +
               '<div class="stu-home-body">' +
-              '<div style="text-align:center;margin-bottom:1rem"><img class="student-home-logo" src="' +
-              assetUrl('fei-studio-brand.png') +
-              '" alt="fei\'s studio" style="height:42px;margin:0 auto;display:block" /></div>' +
+              studentHomeBrandHtml() +
               '<section class="stu-home-hero">' +
               '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:1rem">' +
               '<div style="flex:1;min-width:220px">' +
@@ -5345,9 +5355,7 @@
           root.innerHTML =
             stNav +
             '<div class="stu-home-body">' +
-            '<div style="text-align:center;margin-bottom:1rem"><img class="student-home-logo" src="' +
-            assetUrl('fei-studio-brand.png') +
-            '" alt="fei\'s studio" style="height:42px;margin:0 auto;display:block" /></div>' +
+            studentHomeBrandHtml() +
             '<section class="stu-home-hero">' +
             '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:1rem">' +
             '<div style="flex:1;min-width:220px">' +
