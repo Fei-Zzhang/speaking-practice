@@ -1672,6 +1672,9 @@
         studentBrainstormWheelRotation: 0,
         studentBrainstormWheelResultIx: null,
         studentBrainstormSubmitBusy: false,
+        /** 头脑风暴本轮：题库下标数组（不重复）与当前做到第几题（0..len-1） */
+        studentBrainstormRoundIndices: null,
+        studentBrainstormRoundSlot: 0,
         mockPart: null,
         sectionId: null,
         mcqAnswers: {}, mcqScore: 0, transcript: '', editCount: 0, isEditing: false, finalText: '', phase: 'idle', secondsLeft: SPEAKING_DURATION,
@@ -2690,6 +2693,116 @@
         } catch (_e2) {}
         state.studentBrainstormRec = null;
       }
+      function brainstormShuffleIntArrayInPlace(arr) {
+        var i, j, t;
+        for (i = arr.length - 1; i > 0; i--) {
+          j = Math.floor(Math.random() * (i + 1));
+          t = arr[i];
+          arr[i] = arr[j];
+          arr[j] = t;
+        }
+        return arr;
+      }
+      function brainstormRoundSessionKey(topicNum) {
+        var u = '';
+        try {
+          u = getCurrentUser() || 'guest';
+        } catch (_bu) {
+          u = 'guest';
+        }
+        return 'speaking_brainstorm_round_' + u + '_t' + String(topicNum);
+      }
+      function brainstormCheckinLocalKey() {
+        var u = '';
+        try {
+          u = getCurrentUser() || 'guest';
+        } catch (_bu2) {
+          u = 'guest';
+        }
+        var d = new Date();
+        var m = d.getMonth() + 1;
+        var day = d.getDate();
+        var ymd =
+          d.getFullYear() +
+          '-' +
+          (m < 10 ? '0' : '') +
+          m +
+          '-' +
+          (day < 10 ? '0' : '') +
+          day;
+        return 'speaking_brainstorm_checkin_' + u + '_' + ymd;
+      }
+      function brainstormPersistRound(topicNum, topicIx, indices, slot) {
+        try {
+          sessionStorage.setItem(
+            brainstormRoundSessionKey(topicNum),
+            JSON.stringify({
+              topicIx: topicIx,
+              topicNum: topicNum,
+              indices: indices,
+              slot: slot,
+            })
+          );
+        } catch (_pe) {}
+      }
+      function brainstormClearRound(topicNum) {
+        try {
+          sessionStorage.removeItem(brainstormRoundSessionKey(topicNum));
+        } catch (_ce) {}
+      }
+      function brainstormStartOrResumeRound(topicIx, topicObj) {
+        var qs = (topicObj && topicObj.questions) || [];
+        var n = qs.length;
+        var need = 4;
+        var pickCount = n >= need ? need : n;
+        if (pickCount === 0) {
+          state.studentBrainstormRoundIndices = [];
+          state.studentBrainstormRoundSlot = 0;
+          return;
+        }
+        var resumed = null;
+        try {
+          var raw = sessionStorage.getItem(brainstormRoundSessionKey(topicObj.num));
+          if (raw) resumed = JSON.parse(raw);
+        } catch (_re) {
+          resumed = null;
+        }
+        if (
+          resumed &&
+          resumed.topicIx === topicIx &&
+          resumed.topicNum === topicObj.num &&
+          Array.isArray(resumed.indices) &&
+          resumed.indices.length === pickCount &&
+          typeof resumed.slot === 'number' &&
+          resumed.slot >= 0 &&
+          resumed.slot < resumed.indices.length
+        ) {
+          var seen = {};
+          var ok = true;
+          var rj;
+          for (rj = 0; rj < resumed.indices.length; rj++) {
+            var ix0 = resumed.indices[rj];
+            if (typeof ix0 !== 'number' || ix0 < 0 || ix0 >= n || seen[ix0]) {
+              ok = false;
+              break;
+            }
+            seen[ix0] = true;
+          }
+          if (ok) {
+            state.studentBrainstormRoundIndices = resumed.indices;
+            state.studentBrainstormRoundSlot = resumed.slot;
+            return;
+          }
+        }
+        var pool = [];
+        var pi;
+        for (pi = 0; pi < n; pi++) pool.push(pi);
+        brainstormShuffleIntArrayInPlace(pool);
+        var picks = pool.slice(0, pickCount);
+        state.studentBrainstormRoundIndices = picks;
+        state.studentBrainstormRoundSlot = 0;
+        brainstormPersistRound(topicObj.num, topicIx, picks, 0);
+      }
       function escapeHtml(s) {
         const div = document.createElement('div');
         div.textContent = s;
@@ -3488,6 +3601,8 @@
                   state.studentBrainstormHintKey = null;
                   state.studentBrainstormTranscript = '';
                   state.studentBrainstormSubmitBusy = false;
+                  state.studentBrainstormRoundIndices = null;
+                  state.studentBrainstormRoundSlot = 0;
                 }
                 persistPracticeSection(k);
                 render();
@@ -4143,6 +4258,8 @@
                 state.studentBrainstormParsed = null;
                 state.studentBrainstormRaw = '';
                 state.studentBrainstormScreen = 'topics';
+                state.studentBrainstormRoundIndices = null;
+                state.studentBrainstormRoundSlot = 0;
                 render();
               };
               root.querySelector('[data-practice-hub-back-bs]').onclick = function () {
@@ -4161,11 +4278,6 @@
             state.studentBrainstormTopicIx = tiBs;
             var tCur = topicsBs[tiBs];
             var qsBs = tCur.questions || [];
-            var qiBs = state.studentBrainstormQIx;
-            if (qsBs.length === 0) qiBs = 0;
-            else if (qiBs < 0 || qiBs >= qsBs.length) qiBs = 0;
-            state.studentBrainstormQIx = qiBs;
-            var qCurBs = qsBs.length ? qsBs[qiBs] : null;
             var uDispBs = '';
             try {
               uDispBs = getCurrentUser() || '未登录';
@@ -4195,6 +4307,10 @@
             }
 
             if (scrBs === 'topics') {
+              var checkedInToday = false;
+              try {
+                checkedInToday = localStorage.getItem(brainstormCheckinLocalKey()) === '1';
+              } catch (_ck) {}
               var cardsHtml = '';
               var ci;
               for (ci = 0; ci < topicsBs.length; ci++) {
@@ -4220,7 +4336,7 @@
                 '<div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-2">' +
                 '<div><h1 class="text-2xl font-bold text-gray-800 flex items-center">' +
                 '<i class="fa fa-bolt text-primary mr-3" aria-hidden="true"></i>头脑风暴练习</h1>' +
-                '<p class="text-gray-500 mt-1 text-sm">选择话题 · 题目居中 · 提示转盘 · 口述提交归档</p></div></div>' +
+                '<p class="text-gray-500 mt-1 text-sm">每话题随机 4 题（不重复）· 做完本轮即今日打卡 · 提示转盘 · 口述归档</p></div></div>' +
                 (preBtn ? '<div class="mb-4">' + preBtn + preHtml + '</div>' : '') +
                 '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-8">' +
                 cardsHtml +
@@ -4230,7 +4346,9 @@
                 '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
                 '<div class="text-gray-500 text-sm text-center sm:text-right"><span class="text-primary font-medium">' +
                 escapeHtml(uDispBs) +
-                '</span> · 学习账号</div></div>' +
+                '</span> · 学习账号' +
+                (checkedInToday ? ' · <span class="text-green-600 font-medium">今日头脑风暴已打卡</span>' : '') +
+                '</div></div>' +
                 '<footer class="mt-10 pt-6 border-t border-gray-100 text-center text-gray-500 text-sm"><p>© 2026 fei\'s studio | 让学习更有动力</p></footer>' +
                 '</div>';
               bindStudentTopNav(root);
@@ -4256,12 +4374,12 @@
                     btn.onclick = function () {
                       stopStudentBrainstormRecognition();
                       state.studentBrainstormTopicIx = idx;
-                      state.studentBrainstormQIx = 0;
                       state.studentBrainstormScreen = 'session';
                       state.studentBrainstormHintKey = null;
                       state.studentBrainstormTranscript = '';
                       state.studentBrainstormWheelOpen = false;
                       state.studentBrainstormWheelSpinning = false;
+                      brainstormStartOrResumeRound(idx, topicsBs[idx]);
                       render();
                     };
                   }
@@ -4269,6 +4387,33 @@
               }
               return;
             }
+
+            var qsLenS = qsBs.length;
+            if (qsLenS > 0) {
+              var ri0 = state.studentBrainstormRoundIndices;
+              var sl0 = state.studentBrainstormRoundSlot;
+              if (
+                !ri0 ||
+                !ri0.length ||
+                sl0 < 0 ||
+                sl0 >= ri0.length
+              ) {
+                brainstormStartOrResumeRound(tiBs, tCur);
+              }
+            }
+            var roundIdx = state.studentBrainstormRoundIndices || [];
+            var slot = state.studentBrainstormRoundSlot || 0;
+            var qiBs = 0;
+            if (qsLenS > 0 && roundIdx.length && slot < roundIdx.length) {
+              qiBs = roundIdx[slot];
+            }
+            if (qsLenS === 0) qiBs = 0;
+            else if (qiBs < 0 || qiBs >= qsLenS) {
+              qiBs = roundIdx.length ? roundIdx[0] : 0;
+            }
+            state.studentBrainstormQIx = qiBs;
+            var qCurBs = qsLenS ? qsBs[qiBs] : null;
+            var roundTotal = roundIdx.length || 0;
 
             var vbdCur = brainstormVocabByDimForTopic(tCur);
             var hintKey = state.studentBrainstormHintKey;
@@ -4309,19 +4454,14 @@
                 '</p>'
               : '<p class="text-gray-500">该话题暂无题目。</p>';
             var navQ =
-              qsBs.length > 1 ?
-                '<div class="flex justify-center items-center gap-3 mt-6 text-sm">' +
-                '<button type="button" data-bs-q-prev class="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40" ' +
-                (qiBs <= 0 ? ' disabled' : '') +
-                '>上一题</button>' +
-                '<span class="text-gray-500">第 <strong class="text-primary">' +
-                (qiBs + 1) +
+              roundTotal > 0 ?
+                '<p class="text-sm text-gray-500 mt-6">本轮随机 <strong class="text-gray-800">' +
+                roundTotal +
+                '</strong> 题（互不重复）· 第 <strong class="text-primary">' +
+                (slot + 1) +
                 '</strong> / ' +
-                qsBs.length +
-                ' 题</span>' +
-                '<button type="button" data-bs-q-next class="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40" ' +
-                (qiBs >= qsBs.length - 1 ? ' disabled' : '') +
-                '>下一题</button></div>'
+                roundTotal +
+                ' 题</p>'
               : '';
             var recActive = !!state.studentBrainstormRec;
             var trLen = (state.studentBrainstormTranscript || '').replace(/\s+/g, '').length;
@@ -4401,7 +4541,7 @@
               '<div class="mt-8 bg-secondary/30 rounded-2xl p-6">' +
               '<h3 class="font-bold text-lg mb-2 flex items-center text-gray-800">' +
               '<i class="fa fa-lightbulb-o text-primary mr-2" aria-hidden="true"></i>说明</h3>' +
-              '<p class="text-gray-700 text-sm leading-relaxed">提示转盘抽取四大切入点之一，仅展示该维度下的「话题专用词汇」；口述过程使用浏览器语音识别，页面不显示原文，完成后提交即写入你的练习记录，教师可在后台按账号查阅。</p></div>' +
+              '<p class="text-gray-700 text-sm leading-relaxed">进入话题后系统从本题库随机抽取最多 4 道题（同一轮互不重复；若该话题不足 4 题则全盘随机顺序抽完）。每题可走提示转盘、口述并提交；本轮<strong>全部</strong>提交后计入「今日头脑风暴打卡」。口述使用浏览器语音识别，页面不显示原文；记录同步至练习档案。</p></div>' +
               '<footer class="mt-10 pt-6 border-t border-gray-100 text-center text-gray-500 text-sm"><p>© 2026 fei\'s studio | 让学习更有动力</p></footer>' +
               '</div>' +
               wheelModal;
@@ -4431,24 +4571,6 @@
                   render();
                 };
               }
-            }
-            var prevB = root.querySelector('[data-bs-q-prev]');
-            if (prevB) {
-              prevB.onclick = function () {
-                if (qiBs <= 0) return;
-                brainstormResetQuestionExtras();
-                state.studentBrainstormQIx = qiBs - 1;
-                render();
-              };
-            }
-            var nextB = root.querySelector('[data-bs-q-next]');
-            if (nextB) {
-              nextB.onclick = function () {
-                if (qiBs >= qsBs.length - 1) return;
-                brainstormResetQuestionExtras();
-                state.studentBrainstormQIx = qiBs + 1;
-                render();
-              };
             }
             var hintB = root.querySelector('[data-bs-hint-wheel]');
             if (hintB) {
@@ -4524,7 +4646,14 @@
                 var sectionId =
                   'brainstorm-t' + tCur.num + '-q' + (qCurBs.n != null ? qCurBs.n : qiBs + 1);
                 var sectionTitle =
-                  '头脑风暴 · ' + tCur.title + ' · Q' + (qCurBs.n != null ? qCurBs.n : qiBs + 1);
+                  '头脑风暴 · ' +
+                  tCur.title +
+                  ' · Q' +
+                  (qCurBs.n != null ? qCurBs.n : qiBs + 1) +
+                  ' · 轮次' +
+                  (slot + 1) +
+                  '/' +
+                  roundTotal;
                 var dimLabel = '';
                 if (state.studentBrainstormHintKey) {
                   var dj;
@@ -4549,6 +4678,9 @@
                       hintDimensionLabel: dimLabel,
                       transcript: transcript,
                       submittedAt: new Date().toISOString(),
+                      brainstormRoundSlot: slot + 1,
+                      brainstormRoundTotal: roundTotal,
+                      brainstormRoundPickIndices: roundIdx.slice(),
                     },
                   },
                   function (err) {
@@ -4558,8 +4690,31 @@
                       render();
                       return;
                     }
+                    var rIdx = state.studentBrainstormRoundIndices || [];
+                    var sl = state.studentBrainstormRoundSlot || 0;
+                    var tot = rIdx.length;
                     brainstormResetQuestionExtras();
-                    alert('已提交。教师端可通过练习记录（用户名 + 本节 ID）查阅本次口述归档。');
+                    if (sl + 1 < tot) {
+                      state.studentBrainstormRoundSlot = sl + 1;
+                      brainstormPersistRound(tCur.num, tiBs, rIdx, sl + 1);
+                      alert(
+                        '已提交。请继续本轮第 ' + (sl + 2) + ' / ' + tot + ' 题（口述后再次提交）。'
+                      );
+                      render();
+                      return;
+                    }
+                    try {
+                      localStorage.setItem(brainstormCheckinLocalKey(), '1');
+                    } catch (_lck) {}
+                    brainstormClearRound(tCur.num);
+                    state.studentBrainstormRoundIndices = null;
+                    state.studentBrainstormRoundSlot = 0;
+                    state.studentBrainstormScreen = 'topics';
+                    alert(
+                      '本轮 ' +
+                        tot +
+                        ' 题已全部完成并完成提交。今日头脑风暴打卡已完成！'
+                    );
                     render();
                   }
                 );
