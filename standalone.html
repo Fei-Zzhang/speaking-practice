@@ -139,6 +139,14 @@
     .material-game-opt.picked { border-color: var(--accent); background: rgba(99,102,241,0.12); }
     .material-game-opt.correct { border-color: var(--correct); background: rgba(34,197,94,0.12); }
     .material-game-opt.wrong { border-color: var(--wrong); background: rgba(239,68,68,0.08); }
+    .rq-tap-line { font-size: 1.08rem; line-height: 1.75; margin: 0.75rem 0 0; color: var(--text); }
+    .rq-tap-target { display: inline; padding: 0.1em 0.2em; margin: 0 1px; border-radius: 6px; cursor: pointer; border: 1px dashed rgba(99,102,241,0.45); background: rgba(99,102,241,0.06); transition: background 0.15s ease, border-color 0.15s ease; }
+    .rq-tap-target:hover { border-color: var(--accent); background: rgba(99,102,241,0.12); }
+    .rq-tap-target.rq-tap-hit { border-style: solid; border-color: var(--correct); background: rgba(34,197,94,0.18); cursor: default; }
+    .rq-tap-word { display: inline; padding: 0.05em 0.12em; border-radius: 4px; cursor: pointer; transition: background 0.12s ease; }
+    .rq-tap-word:hover { background: rgba(0,0,0,0.06); }
+    .rq-tap-word.rq-tap-bad { animation: rqTapShake 0.35s ease; background: rgba(239,68,68,0.2); }
+    @keyframes rqTapShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
     .material-text-body { white-space: pre-wrap; font-size: 0.88rem; line-height: 1.55; max-height: min(65vh, 520px); overflow-y: auto; padding: 1rem; background: var(--bg); border-radius: 10px; border: 1px solid var(--border); text-align: left; }
     .material-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
     .material-tabs button { padding: 0.45rem 0.75rem; font-size: 0.88rem; }
@@ -808,7 +816,7 @@
         '<ol class="help-tip-ol">' +
         '<li>顶栏「练习」含五项：<strong>举例</strong>、<strong>解释</strong>、<strong>审题</strong>、<strong>话题词汇</strong>、<strong>头脑风暴</strong>（开放式话题口述）。</li>' +
         '<li>材料：<code>example-practice.text</code>、<code>reasoning_training_practice.text</code>、<code>question_reading_practice.text</code>、<code>topic_vocab_training.text</code>、<code>brainstorrming_practice.text</code>。</li>' +
-        '<li>举例 / 审题为四选一；解释为三部分 MCQ；话题词汇为分 Topic 词库；头脑风暴为分话题浏览题目与词汇参考。</li>' +
+        '<li>举例为四选一；审题 Part 1 为点击圈关键词；审题 Part 2 为四选一；解释为三部分 MCQ；话题词汇为分 Topic 词库；头脑风暴为分话题浏览题目与词汇参考。</li>' +
         '</ol>';
 
       function getStudentHelpKind() {
@@ -1104,6 +1112,19 @@
         return m ? m[1].trim() : '';
       }
 
+      /** example-practice.text：仅 Part 2（至 Part 3 标题前） */
+      function sliceExampleTrainingPart2Only(fullText) {
+        var full = String(fullText || '');
+        var m = full.match(/\n\s*(Part\s*2\b[\s\S]*?)(?=\n\s*Part\s*3\b)/i);
+        return m ? m[1].trim() : '';
+      }
+      /** example-practice.text：仅 Part 3 */
+      function sliceExampleTrainingPart3Only(fullText) {
+        var full = String(fullText || '');
+        var m = full.match(/\n\s*(Part\s*3\b[\s\S]*)/i);
+        return m ? m[1].trim() : '';
+      }
+
       /** 举例：Example Match 块或按日语法合并为平面 MCQ 列表 */
       function parseExamplePracticeWeb(fullText) {
         var t = String(fullText || '');
@@ -1133,13 +1154,16 @@
         return flat.map(shuffleMcqQuestion);
       }
 
-      /** question_reading_practice.text · Part 1 Read Choice（题干至 (A)–(D)） */
-      function parseQuestionReadingPart1(fullText) {
+      /** question_reading_practice.text · Part 2 Read Choice（题干 + A.…D. 或 (A)…(D) + Answer:） */
+      function parseQuestionReadingReadChoice(fullText) {
         var full = String(fullText || '');
-        var startM = full.match(/Part\s*1\s+Read\s+Choice/i);
+        var startM = full.match(/\n\s*Part\s*2\s+Read\s+Choice\b/i);
+        if (!startM) startM = full.match(/^\s*Part\s*2\s+Read\s+Choice\b/im);
         if (!startM) return [];
         var rest = full.slice(startM.index + startM[0].length);
-        var chunk = rest;
+        var stop = rest.search(/\n【审题 · 纸质参考附录】\s*\n/i);
+        if (stop < 0) stop = rest.search(/\n━{10,}\s*\n\s*【审题 · 纸质参考附录】/i);
+        var chunk = stop >= 0 ? rest.slice(0, stop) : rest;
         var blocks = chunk.split(/\n(?=Q\d+\.\s)/);
         var out = [];
         for (var bi = 0; bi < blocks.length; bi++) {
@@ -1147,21 +1171,49 @@
           if (!/^Q\d+\./.test(block)) continue;
           var qn = block.match(/^Q(\d+)\./);
           var num = qn ? parseInt(qn[1], 10) : bi;
-          var stemM = block.match(/^Q\d+\.\s*([\s\S]*?)\(A\)\s*/);
-          if (!stemM) continue;
-          var stem = stemM[1].replace(/\s+/g, ' ').trim();
-          var afterA = block.slice(block.indexOf('(A)'));
-          var ma = afterA.match(/\(A\)\s*([\s\S]*?)\(B\)\s*/);
-          var mb = afterA.match(/\(B\)\s*([\s\S]*?)\(C\)\s*/);
-          var mc = afterA.match(/\(C\)\s*([\s\S]*?)\(D\)\s*/);
-          var md = afterA.match(/\(D\)\s*([\s\S]*?)Answer:\s*([A-Da-d])/i);
-          if (!ma || !mb || !mc || !md) continue;
-          var oA = ma[1].replace(/\s+/g, ' ').trim();
-          var oB = mb[1].replace(/\s+/g, ' ').trim();
-          var oC = mc[1].replace(/\s+/g, ' ').trim();
-          var oD = md[1].replace(/\s+/g, ' ').trim();
-          var letter = String(md[2] || 'A').toUpperCase();
+          var dotM = block.match(/(?:^|\n)\s*A\.\s/m);
+          var dotIdx = dotM && dotM.index >= 0 ? dotM.index : -1;
+          var parenIdx = block.indexOf('(A)');
+          var useDot = dotIdx >= 0 && (parenIdx < 0 || dotIdx < parenIdx);
+          var stem;
+          var oA;
+          var oB;
+          var oC;
+          var oD;
+          var letter;
+          if (useDot) {
+            var head = block.slice(0, dotIdx).replace(/^Q\d+\.\s*/, '').trim();
+            stem = head.replace(/\s+/g, ' ').trim();
+            var tail = block.slice(dotIdx);
+            var mda = tail.match(/^\s*A\.\s*([^\n]+)/m);
+            var mdb = tail.match(/^\s*B\.\s*([^\n]+)/m);
+            var mdc = tail.match(/^\s*C\.\s*([^\n]+)/m);
+            var mdd = tail.match(/^\s*D\.\s*([^\n]+)/m);
+            var mans = tail.match(/Answer:\s*([A-Da-d])/i);
+            if (!mda || !mdb || !mdc || !mdd || !mans) continue;
+            oA = mda[1].replace(/\s+/g, ' ').trim();
+            oB = mdb[1].replace(/\s+/g, ' ').trim();
+            oC = mdc[1].replace(/\s+/g, ' ').trim();
+            oD = mdd[1].replace(/\s+/g, ' ').trim();
+            letter = String(mans[1] || 'A').toUpperCase();
+          } else {
+            var stemM = block.match(/^Q\d+\.\s*([\s\S]*?)\(A\)\s*/);
+            if (!stemM) continue;
+            stem = stemM[1].replace(/\s+/g, ' ').trim();
+            var afterA = block.slice(block.indexOf('(A)'));
+            var ma = afterA.match(/\(A\)\s*([\s\S]*?)\(B\)\s*/);
+            var mb = afterA.match(/\(B\)\s*([\s\S]*?)\(C\)\s*/);
+            var mc = afterA.match(/\(C\)\s*([\s\S]*?)\(D\)\s*/);
+            var md = afterA.match(/\(D\)\s*([\s\S]*?)Answer:\s*([A-Da-d])/i);
+            if (!ma || !mb || !mc || !md) continue;
+            oA = ma[1].replace(/\s+/g, ' ').trim();
+            oB = mb[1].replace(/\s+/g, ' ').trim();
+            oC = mc[1].replace(/\s+/g, ' ').trim();
+            oD = md[1].replace(/\s+/g, ' ').trim();
+            letter = String(md[2] || 'A').toUpperCase();
+          }
           var answerIndex = letter === 'B' ? 1 : letter === 'C' ? 2 : letter === 'D' ? 3 : 0;
+          stem = stem.replace(/^Prompt:\s*/i, '').replace(/\s+/g, ' ').trim();
           var tipM = block.match(/💡\s*TIP:\s*([\s\S]*?)(?=\n[─\-]{3,}|\n\s*$|$)/);
           var tip = tipM ? tipM[1].replace(/\s+/g, ' ').trim() : '';
           out.push({ stem: stem, options: [oA, oB, oC, oD], answerIndex: answerIndex, n: num, tip: tip });
@@ -1170,6 +1222,173 @@
           return a.n - b.n;
         });
         return out;
+      }
+
+      function questionReadingPlaceTargets(sentence, targets) {
+        var s = String(sentence || '');
+        var sl = s.toLowerCase();
+        var todo = [];
+        var ti;
+        for (ti = 0; ti < targets.length; ti++) {
+          var rawT = String(targets[ti] || '').trim();
+          if (rawT) todo.push({ raw: rawT, ti: ti });
+        }
+        todo.sort(function (a, b) {
+          return b.raw.length - a.raw.length;
+        });
+        var ranges = [];
+        var u;
+        for (u = 0; u < todo.length; u++) {
+          var t = todo[u].raw;
+          var tl = t.toLowerCase();
+          var pos = 0;
+          var found = -1;
+          while (true) {
+            pos = sl.indexOf(tl, pos);
+            if (pos < 0) break;
+            var end = pos + t.length;
+            var ok = true;
+            var r;
+            for (r = 0; r < ranges.length; r++) {
+              if (!(end <= ranges[r].start || pos >= ranges[r].end)) {
+                ok = false;
+                break;
+              }
+            }
+            if (ok) {
+              found = pos;
+              break;
+            }
+            pos++;
+          }
+          if (found < 0) return null;
+          ranges.push({
+            start: found,
+            end: found + t.length,
+            ti: todo[u].ti,
+            text: s.slice(found, found + t.length),
+          });
+        }
+        ranges.sort(function (a, b) {
+          return a.start - b.start;
+        });
+        for (var k = 1; k < ranges.length; k++) {
+          if (ranges[k].start < ranges[k - 1].end) return null;
+        }
+        return ranges;
+      }
+
+      function questionReadingPushTapGapSegments(segments, gap) {
+        var g = String(gap || '');
+        if (!g) return;
+        var parts = g.split(/(\s+)/);
+        var pi;
+        for (pi = 0; pi < parts.length; pi++) {
+          var p = parts[pi];
+          if (!p) continue;
+          if (/^\s+$/.test(p)) segments.push({ kind: 'space', text: p });
+          else segments.push({ kind: 'word', text: p });
+        }
+      }
+
+      function questionReadingSegmentsFromRanges(sentence, ranges) {
+        var s = String(sentence || '');
+        var segments = [];
+        var cur = 0;
+        var ri;
+        for (ri = 0; ri < ranges.length; ri++) {
+          var rg = ranges[ri];
+          if (cur < rg.start) questionReadingPushTapGapSegments(segments, s.slice(cur, rg.start));
+          segments.push({ kind: 'target', text: rg.text, ti: rg.ti });
+          cur = rg.end;
+        }
+        if (cur < s.length) questionReadingPushTapGapSegments(segments, s.slice(cur));
+        return segments;
+      }
+
+      /** question_reading_practice.text · Part 1 Keyword Tap（Sentence + Targets: a | b） */
+      function parseQuestionReadingKeywordTap(fullText) {
+        var full = String(fullText || '');
+        var startM = full.match(/\n\s*Part\s*1\s+Keyword\s+Tap\b/i);
+        if (!startM) startM = full.match(/^\s*Part\s*1\s+Keyword\s+Tap\b/im);
+        if (!startM) return [];
+        var rest = full.slice(startM.index + startM[0].length);
+        var mcqCut = rest.search(/\n\s*Part\s*2\s+Read\s+Choice\b/i);
+        var paperCut = rest.search(/\n【审题 · 纸质参考附录】\s*\n/i);
+        var end = rest.length;
+        if (mcqCut >= 0) end = mcqCut;
+        if (paperCut >= 0 && paperCut < end) end = paperCut;
+        var chunk = rest.slice(0, end);
+        var blocks = chunk.split(/\n(?=Q\d+\.\s)/);
+        var out = [];
+        for (var bi = 0; bi < blocks.length; bi++) {
+          var block = blocks[bi].trim();
+          if (!/^Q\d+\./.test(block)) continue;
+          var qn = block.match(/^Q(\d+)\./);
+          var num = qn ? parseInt(qn[1], 10) : bi;
+          var insM = block.match(/Instruction:\s*([^\n]+)/);
+          var instruction = insM ? insM[1].replace(/\s+/g, ' ').trim() : '';
+          var senM = block.match(/Sentence:\s*([^\n]+)/);
+          if (!senM) continue;
+          var sentence = senM[1].trim();
+          var tarM = block.match(/Targets:\s*([^\n]+)/);
+          if (!tarM) continue;
+          var targets = tarM[1]
+            .split('|')
+            .map(function (x) {
+              return x.trim();
+            })
+            .filter(Boolean);
+          if (!targets.length) continue;
+          var ranges = questionReadingPlaceTargets(sentence, targets);
+          if (!ranges || ranges.length !== targets.length) continue;
+          var segments = questionReadingSegmentsFromRanges(sentence, ranges);
+          out.push({
+            n: num,
+            instruction: instruction,
+            sentence: sentence,
+            targets: targets,
+            segments: segments,
+          });
+        }
+        out.sort(function (a, b) {
+          return a.n - b.n;
+        });
+        return out;
+      }
+
+      function questionReadingTapAllGot(got, total) {
+        var i;
+        for (i = 0; i < total; i++) {
+          if (!got || !got[String(i)]) return false;
+        }
+        return true;
+      }
+
+      function questionReadingRenderTapHtml(q, got) {
+        var segs = q.segments || [];
+        var html = '';
+        var si;
+        for (si = 0; si < segs.length; si++) {
+          var sg = segs[si];
+          if (sg.kind === 'space') {
+            html += escapeHtml(sg.text);
+          } else if (sg.kind === 'target') {
+            var hit = got && got[String(sg.ti)];
+            var cls = 'rq-tap-target' + (hit ? ' rq-tap-hit' : '');
+            html +=
+              '<span class="' +
+              cls +
+              '" data-rq-tap-ti="' +
+              sg.ti +
+              '" role="button" tabindex="0">' +
+              escapeHtml(sg.text) +
+              '</span>';
+          } else {
+            html += '<span class="rq-tap-word" data-rq-tap-w="1">' + escapeHtml(sg.text) + '</span>';
+          }
+        }
+        return html;
       }
 
       function questionReadingPracticeFetchUrlList() {
@@ -1634,6 +1853,8 @@
         studentExampleTrainingRevealed: false,
         studentExampleTrainingShowExtra: false,
         studentExampleTrainingRaw: '',
+        /** 举例练习：null = Part 选择页；1 / 2 / 3 = 当前进行的 Part */
+        studentExampleActivePart: null,
         /** 解释练习 · reasoning_training_practice.text（Part 1–3） */
         studentReasoningTrainingLoading: false,
         studentReasoningTrainingError: '',
@@ -1644,13 +1865,18 @@
         studentReasoningTrainingRevealed: false,
         studentReasoningTrainingShowExtra: false,
         studentReasoningTrainingRaw: '',
-        /** 审题练习 · question_reading_practice.text（Part 1 Read Choice） */
+        /** 审题练习 · question_reading_practice.text（Part 1 Keyword Tap + Part 2 Read Choice） */
         studentReadChoiceLoading: false,
         studentReadChoiceError: '',
         studentReadChoicePart1: null,
+        studentReadChoicePart2: null,
+        studentReadChoiceTab: 'p1',
         studentReadChoiceIndex: 0,
         studentReadChoicePicked: null,
         studentReadChoiceRevealed: false,
+        studentReadChoiceTapIndex: 0,
+        studentReadChoiceTapGot: null,
+        studentReadChoiceTapRoundDone: false,
         studentReadChoiceRaw: '',
         /** 话题词汇 · topic_vocab_training.text */
         studentTopicVocabLoading: false,
@@ -1678,6 +1904,8 @@
         studentBrainstormWheelSpinning: false,
         studentBrainstormWheelRotation: 0,
         studentBrainstormWheelResultIx: null,
+        /** 上一把转盘停下的扇区索引 0–3，用于减轻连续相同格 */
+        studentBrainstormWheelLastIx: null,
         studentBrainstormSubmitBusy: false,
         /** 头脑风暴本轮：题库下标数组（不重复）与当前做到第几题（0..len-1） */
         studentBrainstormRoundIndices: null,
@@ -2719,6 +2947,33 @@
         }
         return arr;
       }
+      function brainstormMod360(x) {
+        x = x % 360;
+        if (x < 0) x += 360;
+        return x;
+      }
+      function brainstormRandomU32() {
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+          var u = new Uint32Array(1);
+          crypto.getRandomValues(u);
+          return u[0];
+        }
+        return (Math.random() * 0x100000000) >>> 0;
+      }
+      function brainstormRandomWheelSectorIndex() {
+        return brainstormRandomU32() % 4;
+      }
+      function brainstormPickWheelSectorIndex() {
+        var last = state.studentBrainstormWheelLastIx;
+        var winIx = brainstormRandomWheelSectorIndex();
+        var t = 0;
+        while (last != null && winIx === last && t < 10) {
+          winIx = brainstormRandomWheelSectorIndex();
+          t++;
+        }
+        state.studentBrainstormWheelLastIx = winIx;
+        return winIx;
+      }
       function brainstormRoundSessionKey(topicNum) {
         var u = '';
         try {
@@ -3661,7 +3916,7 @@
               '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">' +
               hubCard('example', 'fa-lightbulb-o', '举例练习', 'Example practice') +
               hubCard('reasoning', 'fa-comments', '解释练习', 'Reasoning practice') +
-              hubCard('readquestions', 'fa-file-text-o', '审题练习', 'Read questions') +
+              hubCard('readquestions', 'fa-file-text-o', '审题练习', 'Part 1 审题圈词 · Part 2 四选一') +
               hubCard('topicvocab', 'fa-book', '话题词汇拓展', 'Topic vocab') +
               hubCard('brainstorm', 'fa-bolt', '头脑风暴', 'Brainstorming') +
               '</div>' +
@@ -3695,7 +3950,10 @@
             root.querySelectorAll('[data-hub-go]').forEach(function (btn) {
               btn.onclick = function () {
                 var k = btn.getAttribute('data-hub-go');
-                if (k === 'example') state.studentFunForceSyncProgress = true;
+                if (k === 'example') {
+                  state.studentFunForceSyncProgress = true;
+                  state.studentExampleActivePart = null;
+                }
                 if (k === 'brainstorm') {
                   stopStudentBrainstormRecognition();
                   state.studentBrainstormScreen = 'topics';
@@ -3708,6 +3966,7 @@
                   state.studentBrainstormRoundSlot = 0;
                   state.studentBrainstormRoundSlotsDone = null;
                   state.studentBrainstormRoundTranscripts = null;
+                  state.studentBrainstormWheelLastIx = null;
                 }
                 persistPracticeSection(k);
                 render();
@@ -3966,7 +4225,7 @@
 
           if (secPr === 'readquestions') {
             if (
-              !state.studentReadChoicePart1 &&
+              !state.studentReadChoiceRaw &&
               !state.studentReadChoiceLoading &&
               !state.studentReadChoiceError
             ) {
@@ -3975,12 +4234,22 @@
                 .then(function (res) {
                   state.studentReadChoiceLoading = false;
                   state.studentReadChoiceRaw = res.text || '';
-                  var qsRd = parseQuestionReadingPart1(res.text).map(shuffleMcqQuestion);
-                  if (!qsRd.length) {
+                  var rawRq = state.studentReadChoiceRaw;
+                  var qsTap = parseQuestionReadingKeywordTap(rawRq);
+                  var qsMcq = parseQuestionReadingReadChoice(rawRq).map(shuffleMcqQuestion);
+                  if (!qsTap.length && !qsMcq.length) {
                     state.studentReadChoiceError =
-                      '未能解析 Part 1 Read Choice。请确认 question_reading_practice.text 文末含「Part 1 Read Choice」与四选一格式。';
+                      '未能解析审题练习。请确认 question_reading_practice.text 中含「Part 1 Keyword Tap」（Sentence / Targets，| 分隔），以及可选的「Part 2 Read Choice」四选一。';
                   } else {
-                    state.studentReadChoicePart1 = qsRd;
+                    state.studentReadChoicePart1 = qsTap.length ? qsTap : null;
+                    state.studentReadChoicePart2 = qsMcq.length ? qsMcq : null;
+                    state.studentReadChoiceTab = qsTap.length ? 'p1' : 'p2';
+                    state.studentReadChoiceIndex = 0;
+                    state.studentReadChoiceTapIndex = 0;
+                    state.studentReadChoiceTapGot = {};
+                    state.studentReadChoiceTapRoundDone = false;
+                    state.studentReadChoicePicked = null;
+                    state.studentReadChoiceRevealed = false;
                   }
                   render();
                 })
@@ -4014,7 +4283,12 @@
                 rtryQ.onclick = function () {
                   state.studentReadChoiceError = '';
                   state.studentReadChoicePart1 = null;
+                  state.studentReadChoicePart2 = null;
                   state.studentReadChoiceRaw = '';
+                  state.studentReadChoiceTab = 'p1';
+                  state.studentReadChoiceTapIndex = 0;
+                  state.studentReadChoiceTapGot = null;
+                  state.studentReadChoiceTapRoundDone = false;
                   render();
                 };
               }
@@ -4024,104 +4298,242 @@
               };
               return;
             }
-            var qsQ = state.studentReadChoicePart1 || [];
-            var ixQ = state.studentReadChoiceIndex;
-            if (ixQ < 0 || ixQ >= qsQ.length) ixQ = 0;
-            if (ixQ !== state.studentReadChoiceIndex) state.studentReadChoiceIndex = ixQ;
-            var qQ = qsQ[ixQ];
-            var totQ = qsQ.length;
-            var revQ = state.studentReadChoiceRevealed;
-            var pkQ = state.studentReadChoicePicked;
-            var optsQ = '';
-            var oq;
-            for (oq = 0; oq < qQ.options.length; oq++) {
-              var clsQ = 'material-game-opt';
-              if (revQ) {
-                if (oq === qQ.answerIndex) clsQ += ' correct';
-                else if (pkQ === oq && oq !== qQ.answerIndex) clsQ += ' wrong';
-              } else if (pkQ === oq) clsQ += ' picked';
-              optsQ +=
+            var qsTapList = state.studentReadChoicePart1 || [];
+            var qsQ = state.studentReadChoicePart2 || [];
+            var hasP1 = qsTapList.length > 0;
+            var hasP2 = qsQ.length > 0;
+            var tabRQ = state.studentReadChoiceTab || 'p1';
+            if (!hasP1 && hasP2) tabRQ = 'p2';
+            if (hasP1 && !hasP2) tabRQ = 'p1';
+            state.studentReadChoiceTab = tabRQ;
+
+            var tabsRqHtml = '';
+            if (hasP1 && hasP2) {
+              tabsRqHtml =
+                '<div class="material-tabs">' +
                 '<button type="button" class="' +
-                clsQ +
-                '" data-rq-opt="' +
-                oq +
-                '">' +
-                String.fromCharCode(65 + oq) +
-                '. ' +
-                escapeHtml(qQ.options[oq]) +
-                '</button>';
+                (tabRQ === 'p1' ? 'tab-active' : '') +
+                '" data-rq-tab="p1">Part 1 · 审题圈词</button>' +
+                '<button type="button" class="' +
+                (tabRQ === 'p2' ? 'tab-active' : '') +
+                '" data-rq-tab="p2">Part 2 · 四选一</button>' +
+                '</div>';
             }
-            var tipQ =
-              revQ && qQ.tip
-                ? '<div class="ai-prompt-box" style="margin-top:1rem"><strong>💡 TIP</strong><br>' +
-                  escapeHtml(qQ.tip) +
-                  '</div>'
+
+            if (tabRQ === 'p1' && hasP1) {
+              var ixT = state.studentReadChoiceTapIndex || 0;
+              if (ixT < 0 || ixT >= qsTapList.length) ixT = 0;
+              if (ixT !== state.studentReadChoiceTapIndex) state.studentReadChoiceTapIndex = ixT;
+              var qT = qsTapList[ixT];
+              var totT = qsTapList.length;
+              if (!state.studentReadChoiceTapGot) state.studentReadChoiceTapGot = {};
+              var gotT = state.studentReadChoiceTapGot;
+              var rdT = state.studentReadChoiceTapRoundDone;
+              var tapLine = questionReadingRenderTapHtml(qT, gotT);
+              var instT = qT.instruction
+                ? '<p class="material-game-stem" style="margin-bottom:0.35rem">' +
+                  escapeHtml(qT.instruction) +
+                  '</p>'
                 : '';
-            var doneQ = ixQ >= totQ - 1 && revQ;
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card">' +
+                tabsRqHtml +
+                '<div class="material-game-head">' +
+                '<strong>审题练习 · Part 1 审题圈词</strong>' +
+                '<span style="color:var(--muted);font-size:0.88rem">第 ' +
+                (ixT + 1) +
+                ' / ' +
+                totT +
+                ' 题 · <code style="font-size:0.82em">question_reading_practice.text</code></span></div>' +
+                instT +
+                '<p class="rq-tap-line">' +
+                tapLine +
+                '</p>' +
+                '<div class="actions" style="margin-top:1rem">' +
+                '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
+                '<span style="flex:1"></span>' +
+                (!rdT
+                  ? '<span style="color:var(--muted);font-size:0.88rem">点击句中虚线框内全部关键词；点错普通词会提示。</span>'
+                  : '<span style="color:var(--correct);font-size:0.88rem;font-weight:600">本轮 Part 1 已完成</span>') +
+                (rdT
+                  ? '<button type="button" class="primary" data-rq-tap-restart>重新开始</button>'
+                  : '') +
+                '</div></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-practice-hub-back-rq]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              root.querySelectorAll('[data-rq-tab]').forEach(function (bt) {
+                bt.onclick = function () {
+                  state.studentReadChoiceTab = bt.getAttribute('data-rq-tab');
+                  render();
+                };
+              });
+              root.querySelectorAll('[data-rq-tap-ti]').forEach(function (el) {
+                el.onclick = function () {
+                  if (state.studentReadChoiceTapRoundDone) return;
+                  var ti = parseInt(el.getAttribute('data-rq-tap-ti'), 10);
+                  var qCur = qsTapList[state.studentReadChoiceTapIndex || 0];
+                  if (!qCur || isNaN(ti)) return;
+                  if (!state.studentReadChoiceTapGot) state.studentReadChoiceTapGot = {};
+                  if (state.studentReadChoiceTapGot[String(ti)]) return;
+                  state.studentReadChoiceTapGot[String(ti)] = true;
+                  if (questionReadingTapAllGot(state.studentReadChoiceTapGot, qCur.targets.length)) {
+                    var ix0 = state.studentReadChoiceTapIndex || 0;
+                    if (ix0 >= qsTapList.length - 1) {
+                      state.studentReadChoiceTapRoundDone = true;
+                    } else {
+                      state.studentReadChoiceTapIndex = ix0 + 1;
+                      state.studentReadChoiceTapGot = {};
+                    }
+                  }
+                  render();
+                };
+              });
+              root.querySelectorAll('.rq-tap-word').forEach(function (el) {
+                el.onclick = function () {
+                  if (state.studentReadChoiceTapRoundDone) return;
+                  el.classList.add('rq-tap-bad');
+                  setTimeout(function () {
+                    try {
+                      el.classList.remove('rq-tap-bad');
+                    } catch (_e) {}
+                  }, 400);
+                };
+              });
+              var rstTap = root.querySelector('[data-rq-tap-restart]');
+              if (rstTap) {
+                rstTap.onclick = function () {
+                  state.studentReadChoiceTapIndex = 0;
+                  state.studentReadChoiceTapGot = {};
+                  state.studentReadChoiceTapRoundDone = false;
+                  if (state.studentReadChoiceRaw) {
+                    state.studentReadChoicePart1 = parseQuestionReadingKeywordTap(state.studentReadChoiceRaw);
+                  }
+                  render();
+                };
+              }
+              return;
+            }
+
+            if (tabRQ === 'p2' && hasP2) {
+              var ixQ = state.studentReadChoiceIndex;
+              if (ixQ < 0 || ixQ >= qsQ.length) ixQ = 0;
+              if (ixQ !== state.studentReadChoiceIndex) state.studentReadChoiceIndex = ixQ;
+              var qQ = qsQ[ixQ];
+              var totQ = qsQ.length;
+              var revQ = state.studentReadChoiceRevealed;
+              var pkQ = state.studentReadChoicePicked;
+              var optsQ = '';
+              var oq;
+              for (oq = 0; oq < qQ.options.length; oq++) {
+                var clsQ = 'material-game-opt';
+                if (revQ) {
+                  if (oq === qQ.answerIndex) clsQ += ' correct';
+                  else if (pkQ === oq && oq !== qQ.answerIndex) clsQ += ' wrong';
+                } else if (pkQ === oq) clsQ += ' picked';
+                optsQ +=
+                  '<button type="button" class="' +
+                  clsQ +
+                  '" data-rq-opt="' +
+                  oq +
+                  '">' +
+                  String.fromCharCode(65 + oq) +
+                  '. ' +
+                  escapeHtml(qQ.options[oq]) +
+                  '</button>';
+              }
+              var tipQ =
+                revQ && qQ.tip
+                  ? '<div class="ai-prompt-box" style="margin-top:1rem"><strong>💡 TIP</strong><br>' +
+                    escapeHtml(qQ.tip) +
+                    '</div>'
+                  : '';
+              var doneQ = ixQ >= totQ - 1 && revQ;
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="card">' +
+                tabsRqHtml +
+                '<div class="material-game-head">' +
+                '<strong>审题练习 · Part 2 四选一</strong>' +
+                '<span style="color:var(--muted);font-size:0.88rem">第 ' +
+                (ixQ + 1) +
+                ' / ' +
+                totQ +
+                ' 题 · <code style="font-size:0.82em">question_reading_practice.text</code></span></div>' +
+                '<p class="material-game-stem" style="white-space:pre-wrap">' +
+                escapeHtml(qQ.stem) +
+                '</p>' +
+                optsQ +
+                tipQ +
+                '<div class="actions" style="margin-top:1rem">' +
+                '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
+                '<span style="flex:1"></span>' +
+                (!revQ
+                  ? '<span style="color:var(--muted);font-size:0.88rem">点击选项查看解析</span>'
+                  : '') +
+                (revQ && !doneQ
+                  ? '<button type="button" class="primary" data-rq-next>下一题</button>'
+                  : '') +
+                (revQ && doneQ
+                  ? '<button type="button" class="primary" data-rq-restart>重新开始</button>'
+                  : '') +
+                '</div></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-practice-hub-back-rq]').onclick = function () {
+                persistPracticeSection('hub');
+                render();
+              };
+              root.querySelectorAll('[data-rq-tab]').forEach(function (bt) {
+                bt.onclick = function () {
+                  state.studentReadChoiceTab = bt.getAttribute('data-rq-tab');
+                  render();
+                };
+              });
+              root.querySelectorAll('[data-rq-opt]').forEach(function (btn) {
+                btn.onclick = function () {
+                  if (state.studentReadChoiceRevealed) return;
+                  state.studentReadChoicePicked = parseInt(btn.getAttribute('data-rq-opt'), 10);
+                  state.studentReadChoiceRevealed = true;
+                  render();
+                };
+              });
+              var nxQ = root.querySelector('[data-rq-next]');
+              if (nxQ) {
+                nxQ.onclick = function () {
+                  state.studentReadChoiceIndex = Math.min(ixQ + 1, totQ - 1);
+                  state.studentReadChoicePicked = null;
+                  state.studentReadChoiceRevealed = false;
+                  render();
+                };
+              }
+              var rsQ = root.querySelector('[data-rq-restart]');
+              if (rsQ) {
+                rsQ.onclick = function () {
+                  state.studentReadChoiceIndex = 0;
+                  state.studentReadChoicePicked = null;
+                  state.studentReadChoiceRevealed = false;
+                  if (state.studentReadChoiceRaw) {
+                    state.studentReadChoicePart2 = parseQuestionReadingReadChoice(state.studentReadChoiceRaw).map(
+                      shuffleMcqQuestion
+                    );
+                  }
+                  render();
+                };
+              }
+              return;
+            }
+
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card">' +
-              '<div class="material-game-head">' +
-              '<strong>审题练习 · Part 1 Read Choice</strong>' +
-              '<span style="color:var(--muted);font-size:0.88rem">第 ' +
-              (ixQ + 1) +
-              ' / ' +
-              totQ +
-              ' 题 · <code style="font-size:0.82em">question_reading_practice.text</code></span></div>' +
-              '<p class="material-game-stem" style="white-space:pre-wrap">' +
-              escapeHtml(qQ.stem) +
-              '</p>' +
-              optsQ +
-              tipQ +
-              '<div class="actions" style="margin-top:1rem">' +
-              '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
-              '<span style="flex:1"></span>' +
-              (!revQ
-                ? '<span style="color:var(--muted);font-size:0.88rem">点击选项查看解析</span>'
-                : '') +
-              (revQ && !doneQ
-                ? '<button type="button" class="primary" data-rq-next>下一题</button>'
-                : '') +
-              (revQ && doneQ
-                ? '<button type="button" class="primary" data-rq-restart>重新开始</button>'
-                : '') +
-              '</div></div>';
+              '<div class="card"><p>审题练习暂无可用题目。</p><button type="button" data-practice-hub-back-rq>← 练习首页</button></div>';
             bindStudentTopNav(root);
             root.querySelector('[data-practice-hub-back-rq]').onclick = function () {
               persistPracticeSection('hub');
               render();
             };
-            root.querySelectorAll('[data-rq-opt]').forEach(function (btn) {
-              btn.onclick = function () {
-                if (state.studentReadChoiceRevealed) return;
-                state.studentReadChoicePicked = parseInt(btn.getAttribute('data-rq-opt'), 10);
-                state.studentReadChoiceRevealed = true;
-                render();
-              };
-            });
-            var nxQ = root.querySelector('[data-rq-next]');
-            if (nxQ) {
-              nxQ.onclick = function () {
-                state.studentReadChoiceIndex = Math.min(ixQ + 1, totQ - 1);
-                state.studentReadChoicePicked = null;
-                state.studentReadChoiceRevealed = false;
-                render();
-              };
-            }
-            var rsQ = root.querySelector('[data-rq-restart]');
-            if (rsQ) {
-              rsQ.onclick = function () {
-                state.studentReadChoiceIndex = 0;
-                state.studentReadChoicePicked = null;
-                state.studentReadChoiceRevealed = false;
-                if (state.studentReadChoiceRaw) {
-                  state.studentReadChoicePart1 = parseQuestionReadingPart1(state.studentReadChoiceRaw).map(
-                    shuffleMcqQuestion
-                  );
-                }
-                render();
-              };
-            }
             return;
           }
 
@@ -4484,7 +4896,7 @@
                       state.studentBrainstormScreen = 'session';
                       state.studentBrainstormHintKey = null;
                       state.studentBrainstormTranscript = '';
-                      state.studentBrainstormWheelOpen = false;
+                      state.studentBrainstormWheelOpen = true;
                       state.studentBrainstormWheelSpinning = false;
                       brainstormStartOrResumeRound(idx, topicsBs[idx]);
                       render();
@@ -4514,6 +4926,8 @@
                 !allDoneSum
               ) {
                 state.studentBrainstormScreen = 'session';
+                state.studentBrainstormWheelOpen = true;
+                state.studentBrainstormWheelSpinning = false;
                 render();
                 return;
               }
@@ -4565,6 +4979,8 @@
               if (backSess) {
                 backSess.onclick = function () {
                   state.studentBrainstormScreen = 'session';
+                  state.studentBrainstormWheelOpen = true;
+                  state.studentBrainstormWheelSpinning = false;
                   render();
                 };
               }
@@ -4863,6 +5279,8 @@
                 var doneP = state.studentBrainstormRoundSlotsDone || [];
                 stopStudentBrainstormRecognition();
                 state.studentBrainstormHintKey = null;
+                state.studentBrainstormWheelOpen = true;
+                state.studentBrainstormWheelSpinning = false;
                 state.studentBrainstormRoundSlot = sln - 1;
                 state.studentBrainstormTranscript =
                   trxP[sln - 1] != null && trxP[sln - 1] !== '' ? trxP[sln - 1] : '';
@@ -4885,6 +5303,8 @@
                 }
                 stopStudentBrainstormRecognition();
                 state.studentBrainstormHintKey = null;
+                state.studentBrainstormWheelOpen = true;
+                state.studentBrainstormWheelSpinning = false;
                 state.studentBrainstormRoundSlot = sln + 1;
                 state.studentBrainstormTranscript =
                   trxN[sln + 1] != null && trxN[sln + 1] !== '' ? trxN[sln + 1] : '';
@@ -5042,13 +5462,17 @@
               spinBtn.onclick = function () {
                 if (state.studentBrainstormWheelSpinning) return;
                 spinBtn.disabled = true;
-                var winIx = Math.floor(Math.random() * 4);
+                var winIx = brainstormPickWheelSectorIndex();
                 state.studentBrainstormWheelResultIx = winIx;
                 state.studentBrainstormWheelSpinning = true;
                 var base = state.studentBrainstormWheelRotation || 0;
                 var sc = winIx * 90 + 45;
-                var align = ((360 - (sc % 360)) % 360 + 360) % 360;
-                var end = base + 5 * 360 + align;
+                var wantMod = brainstormMod360(-sc);
+                var baseMod = brainstormMod360(base);
+                var delta = wantMod - baseMod;
+                if (delta < 0) delta += 360;
+                var fullTurns = 5 + (brainstormRandomU32() % 3);
+                var end = base + fullTurns * 360 + delta;
                 disk.style.transition = 'none';
                 disk.style.transform = 'rotate(' + base + 'deg)';
                 void disk.offsetWidth;
@@ -5074,7 +5498,7 @@
 
           if (secPr === 'example') {
             if (
-              !state.studentExampleTrainingPart1 &&
+              !state.studentExampleTrainingRaw &&
               !state.studentExampleTrainingLoading &&
               !state.studentExampleTrainingError
             ) {
@@ -5128,16 +5552,164 @@
                   state.studentExampleTrainingError = '';
                   state.studentExampleTrainingPart1 = null;
                   state.studentExampleTrainingRaw = '';
+                  state.studentExampleActivePart = null;
                   render();
                 };
               }
               root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
+                state.studentExampleActivePart = null;
                 persistPracticeSection('hub');
                 render();
               };
               return;
             }
+            var rawEx = state.studentExampleTrainingRaw || '';
+            var qsExPick = state.studentExampleTrainingPart1 || [];
+            var hasExP1 = qsExPick.length > 0;
+            var textExP2 = sliceExampleTrainingPart2Only(rawEx);
+            var textExP3 = sliceExampleTrainingPart3Only(rawEx);
+            var hasExP2 = textExP2.length > 0;
+            var hasExP3 = textExP3.length > 0;
+
+            if (state.studentExampleActivePart == null) {
+              try {
+                document.title = "fei's studio · 举例练习";
+              } catch (_tPick) {}
+              var card1 =
+                '<button type="button" data-ex-pick-part="1" class="text-left w-full rounded-2xl border-2 p-5 transition practice-tw-btnlift ' +
+                (hasExP1 ? 'border-primary/30 bg-white hover:border-primary' : 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed') +
+                '" ' +
+                (!hasExP1 ? 'disabled' : '') +
+                '>' +
+                '<div class="font-bold text-gray-900 mb-1">Part 1 · Example Match</div>' +
+                '<p class="text-sm text-gray-600 m-0">在线四选一 · 含 TIP' +
+                (hasExP1 ? ' · 共 ' + qsExPick.length + ' 题' : '（本题库未解析到题目）') +
+                '</p></button>';
+              var card2 =
+                '<button type="button" data-ex-pick-part="2" class="text-left w-full rounded-2xl border-2 p-5 transition practice-tw-btnlift ' +
+                (hasExP2 ? 'border-primary/30 bg-white hover:border-primary' : 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed') +
+                '" ' +
+                (!hasExP2 ? 'disabled' : '') +
+                '>' +
+                '<div class="font-bold text-gray-900 mb-1">Part 2 · 5W1H Detail Builder</div>' +
+                '<p class="text-sm text-gray-600 m-0">填空与词库 · 建议课堂或线下完成</p></button>';
+              var card3 =
+                '<button type="button" data-ex-pick-part="3" class="text-left w-full rounded-2xl border-2 p-5 transition practice-tw-btnlift ' +
+                (hasExP3 ? 'border-primary/30 bg-white hover:border-primary' : 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed') +
+                '" ' +
+                (!hasExP3 ? 'disabled' : '') +
+                '>' +
+                '<div class="font-bold text-gray-900 mb-1">Part 3 · Best Example Selector</div>' +
+                '<p class="text-sm text-gray-600 m-0">排序精选 · 建议课堂或线下完成</p></button>';
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
+                '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-gray-100">' +
+                '<h1 class="text-xl font-bold text-gray-800 mb-2">举例练习 · 选择 Part</h1>' +
+                '<p class="text-gray-600 text-sm mb-6">请按老师布置进入对应部分；各部分独立，可分开完成。</p>' +
+                '<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">' +
+                card1 +
+                card2 +
+                card3 +
+                '</div>' +
+                '<button type="button" data-practice-hub-back-ex class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
+                '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
+                '</div></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
+                state.studentExampleActivePart = null;
+                persistPracticeSection('hub');
+                render();
+              };
+              root.querySelectorAll('[data-ex-pick-part]').forEach(function (btn) {
+                btn.onclick = function () {
+                  if (btn.disabled) return;
+                  var p = parseInt(btn.getAttribute('data-ex-pick-part'), 10);
+                  state.studentExampleActivePart = p;
+                  state.studentExampleTrainingIndex = 0;
+                  state.studentExampleTrainingPicked = null;
+                  state.studentExampleTrainingRevealed = false;
+                  state.studentExampleTrainingShowExtra = false;
+                  render();
+                };
+              });
+              return;
+            }
+
+            if (state.studentExampleActivePart === 2) {
+              try {
+                document.title = "fei's studio · 举例 Part 2";
+              } catch (_t2) {}
+              var body2 = hasExP2 ? textExP2 : '（材料中未找到 Part 2 区块）';
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
+                '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-gray-100">' +
+                '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">' +
+                '<div><h1 class="text-xl font-bold text-gray-800 m-0">举例练习 · Part 2</h1>' +
+                '<p class="text-sm text-gray-500 m-0 mt-1">5W1H Detail Builder · 填空与词库</p></div>' +
+                '<button type="button" data-ex-change-part class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium practice-tw-btnlift hover:bg-gray-200 shrink-0">' +
+                '← 更换 Part</button></div>' +
+                '<div class="material-text-body max-h-[min(72vh,640px)] text-sm">' +
+                escapeHtml(body2) +
+                '</div>' +
+                '<div class="mt-6 flex flex-wrap gap-3">' +
+                '<button type="button" data-practice-hub-back-ex class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
+                '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button></div>' +
+                '</div></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-ex-change-part]').onclick = function () {
+                state.studentExampleActivePart = null;
+                render();
+              };
+              root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
+                state.studentExampleActivePart = null;
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+
+            if (state.studentExampleActivePart === 3) {
+              try {
+                document.title = "fei's studio · 举例 Part 3";
+              } catch (_t3) {}
+              var body3 = hasExP3 ? textExP3 : '（材料中未找到 Part 3 区块）';
+              root.innerHTML =
+                studentTopNavHtml() +
+                '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
+                '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-gray-100">' +
+                '<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">' +
+                '<div><h1 class="text-xl font-bold text-gray-800 m-0">举例练习 · Part 3</h1>' +
+                '<p class="text-sm text-gray-500 m-0 mt-1">Best Example Selector · 排序精选</p></div>' +
+                '<button type="button" data-ex-change-part class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium practice-tw-btnlift hover:bg-gray-200 shrink-0">' +
+                '← 更换 Part</button></div>' +
+                '<div class="material-text-body max-h-[min(72vh,640px)] text-sm">' +
+                escapeHtml(body3) +
+                '</div>' +
+                '<div class="mt-6 flex flex-wrap gap-3">' +
+                '<button type="button" data-practice-hub-back-ex class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
+                '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button></div>' +
+                '</div></div>';
+              bindStudentTopNav(root);
+              root.querySelector('[data-ex-change-part]').onclick = function () {
+                state.studentExampleActivePart = null;
+                render();
+              };
+              root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
+                state.studentExampleActivePart = null;
+                persistPracticeSection('hub');
+                render();
+              };
+              return;
+            }
+
             var qsEx = state.studentExampleTrainingPart1 || [];
+            if (!qsEx.length) {
+              state.studentExampleActivePart = null;
+              render();
+              return;
+            }
             var ix = state.studentExampleTrainingIndex;
             if (ix < 0 || ix >= qsEx.length) ix = 0;
             if (ix !== state.studentExampleTrainingIndex) state.studentExampleTrainingIndex = ix;
@@ -5178,16 +5750,6 @@
                   '</p></div></div></div>'
                 : '';
             var doneAll = ix >= total - 1 && rev;
-            var part23 = sliceExampleTrainingPart2Onward(state.studentExampleTrainingRaw || '');
-            var extraSection =
-              part23 && state.studentExampleTrainingShowExtra
-                ? '<div class="material-text-body max-h-[min(50vh,360px)]">' + escapeHtml(part23) + '</div>'
-                : '';
-            var toggleExtraBtn = part23
-              ? '<button type="button" data-ex-toggle-extra class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200 text-sm sm:text-base w-full sm:w-auto">' +
-                (state.studentExampleTrainingShowExtra ? '收起 Part 2–3 原文' : '展开 Part 2–3 原文（填空 / 排序 · 线下练习）') +
-                '</button>'
-              : '';
             var exBarPct = Math.min(100, Math.max(1, Math.round(((ix + 1) / total) * 100)));
             var rightEx = '';
             if (!rev) {
@@ -5201,14 +5763,17 @@
                 '<button type="button" data-ex-restart class="inline-flex items-center justify-center bg-primary text-white px-8 py-3 rounded-lg font-medium practice-tw-btnlift shadow-sm hover:opacity-95 w-full md:w-auto"><i class="fa fa-refresh mr-2" aria-hidden="true"></i>重新开始</button>';
             }
             try {
-              document.title = "fei's studio · 举例练习";
+              document.title = "fei's studio · 举例 Part 1";
             } catch (_tex) {}
             root.innerHTML =
               studentTopNavHtml() +
               '<div class="practice-tw-main max-w-4xl mx-auto px-4 py-6 sm:py-8">' +
               '<div class="bg-white rounded-2xl p-6 sm:p-8 practice-tw-cardshadow border border-gray-100">' +
               '<div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">' +
-              '<div><h1 class="text-xl font-bold text-gray-800">举例练习 · Part 1 Example Match</h1></div>' +
+              '<div class="flex flex-col sm:flex-row sm:items-center gap-3">' +
+              '<h1 class="text-xl font-bold text-gray-800 m-0">举例练习 · Part 1 · Example Match</h1>' +
+              '<button type="button" data-ex-change-part class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-medium practice-tw-btnlift hover:bg-gray-200">' +
+              '更换 Part</button></div>' +
               '<div class="text-gray-500 text-sm">第 ' +
               (ix + 1) +
               ' / ' +
@@ -5225,12 +5790,10 @@
               '<div class="flex flex-col sm:flex-row gap-3 order-2 md:order-1">' +
               '<button type="button" data-practice-hub-back-ex class="inline-flex items-center justify-center bg-gray-100 text-gray-700 px-6 py-3 rounded-lg font-medium practice-tw-btnlift hover:bg-gray-200">' +
               '<i class="fa fa-arrow-left mr-2" aria-hidden="true"></i>练习首页</button>' +
-              toggleExtraBtn +
               '</div>' +
               '<div class="flex justify-end md:justify-end order-1 md:order-2">' +
               rightEx +
               '</div></div>' +
-              (extraSection ? '<div class="mt-6">' + extraSection + '</div>' : '') +
               '</div>' +
               '<div class="mt-8 bg-secondary/30 rounded-2xl p-6">' +
               '<div class="flex justify-between items-center mb-2">' +
@@ -5247,9 +5810,17 @@
               '<p class="text-gray-600 text-sm mt-3">加油！每完成一题，你就离目标更近一步 🚀</p></div></div>';
             bindStudentTopNav(root);
             root.querySelector('[data-practice-hub-back-ex]').onclick = function () {
+              state.studentExampleActivePart = null;
               persistPracticeSection('hub');
               render();
             };
+            var chp = root.querySelector('[data-ex-change-part]');
+            if (chp) {
+              chp.onclick = function () {
+                state.studentExampleActivePart = null;
+                render();
+              };
+            }
             root.querySelectorAll('[data-ex-opt]').forEach(function (btn) {
               btn.onclick = function () {
                 if (state.studentExampleTrainingRevealed) return;
@@ -5277,13 +5848,6 @@
                 if (state.studentExampleTrainingPart1 && state.studentExampleTrainingRaw) {
                   state.studentExampleTrainingPart1 = parseExamplePracticeWeb(state.studentExampleTrainingRaw);
                 }
-                render();
-              };
-            }
-            var tg = root.querySelector('[data-ex-toggle-extra]');
-            if (tg) {
-              tg.onclick = function () {
-                state.studentExampleTrainingShowExtra = !state.studentExampleTrainingShowExtra;
                 render();
               };
             }
