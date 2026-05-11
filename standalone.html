@@ -1289,6 +1289,51 @@
         return ranges;
       }
 
+      function questionReadingPhraseIsTarget(phrase, targets) {
+        var n = function (x) {
+          return String(x || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .replace(/^[.,?!;:'"]+|[.,?!;:'"]+$/g, '');
+        };
+        var p = n(phrase);
+        if (!p) return false;
+        var ti;
+        for (ti = 0; ti < targets.length; ti++) {
+          var t = n(targets[ti]);
+          if (!t) continue;
+          if (p === t) return true;
+          if (t.length >= 4 && p.indexOf(t) >= 0) return true;
+          if (p.length >= 4 && t.indexOf(p) >= 0) return true;
+        }
+        return false;
+      }
+
+      function questionReadingLexicalTapSegments(sentence, tapList, targets) {
+        var s = String(sentence || '');
+        var taps = tapList.map(function (x) {
+          return x.trim();
+        }).filter(Boolean);
+        if (!taps.length) return null;
+        var segments = [];
+        var pos = 0;
+        var wi = 0;
+        var i;
+        for (i = 0; i < taps.length; i++) {
+          var phrase = taps[i];
+          var found = s.indexOf(phrase, pos);
+          if (found < 0) return null;
+          if (found > pos) segments.push({ kind: 'space', text: s.slice(pos, found) });
+          var isTarget = questionReadingPhraseIsTarget(phrase, targets);
+          segments.push({ kind: 'word', text: phrase, wi: wi, isTarget: isTarget });
+          wi++;
+          pos = found + phrase.length;
+        }
+        if (pos < s.length) segments.push({ kind: 'space', text: s.slice(pos) });
+        return segments;
+      }
+
       function questionReadingWordLevelSegments(sentence, ranges) {
         var s = String(sentence || '');
         var segments = [];
@@ -1352,9 +1397,23 @@
             })
             .filter(Boolean);
           if (!targets.length) continue;
-          var ranges = questionReadingPlaceTargets(sentence, targets);
-          if (!ranges || ranges.length !== targets.length) continue;
-          var segments = questionReadingWordLevelSegments(sentence, ranges);
+          var tapM = block.match(/\nTap:\s*([^\n]+)/i);
+          var segments;
+          if (tapM) {
+            var tapLine = tapM[1].replace(/\n/g, ' ').trim();
+            var tapList = tapLine
+              .split('|')
+              .map(function (x) {
+                return x.trim();
+              })
+              .filter(Boolean);
+            segments = questionReadingLexicalTapSegments(sentence, tapList, targets);
+            if (!segments) continue;
+          } else {
+            var ranges = questionReadingPlaceTargets(sentence, targets);
+            if (!ranges || ranges.length !== targets.length) continue;
+            segments = questionReadingWordLevelSegments(sentence, ranges);
+          }
           out.push({
             n: num,
             instruction: instruction,
@@ -4253,7 +4312,7 @@
                   var qsMcq = parseQuestionReadingReadChoice(rawRq).map(shuffleMcqQuestion);
                   if (!qsTap.length && !qsMcq.length) {
                     state.studentReadChoiceError =
-                      '未能解析审题练习。请确认 question_reading_practice.text 中含「Part 1 Keyword Tap」（Sentence / Targets，| 分隔），以及可选的「Part 2 Read Choice」四选一。';
+                      '未能解析审题练习。请确认 question_reading_practice.text 中含「Part 1 Keyword Tap」（Sentence / Targets，| 分隔；单行「Tap:」可选，用于按短语块切段），以及可选的「Part 2 Read Choice」四选一。';
                   } else {
                     state.studentReadChoicePart1 = qsTap.length ? qsTap : null;
                     state.studentReadChoicePart2 = qsMcq.length ? qsMcq : null;
@@ -4368,7 +4427,7 @@
                 '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
                 '<span style="flex:1"></span>' +
                 (!rdT
-                  ? '<span style="color:var(--muted);font-size:0.88rem">句中每个词都是可点的小框；请点出全部审题关键词（可能多词），点错会提示。</span>'
+                  ? '<span style="color:var(--muted);font-size:0.88rem">句中可点击部分为教材划分的词块（有 Tap: 时为短语片；无 Tap: 时为逐词小框）。请点出全部审题关键词，点错会提示。</span>'
                   : '<span style="color:var(--correct);font-size:0.88rem;font-weight:600">本轮 Part 1 已完成</span>') +
                 (rdT
                   ? '<button type="button" class="primary" data-rq-tap-restart>重新开始</button>'

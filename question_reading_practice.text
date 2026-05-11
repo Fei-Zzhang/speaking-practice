@@ -60,57 +60,67 @@ Speaking practice workbook · four tracks
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Part 1   Keyword Tap
-说明：逐词点击：句中每个英文词均为同款小框；请点出全部审题关键词所涉及的词（一道题常需多点几个词），点对进下一题；点错会提示。（与下方纸质参考 Q01–Q10 对应，网页结构化共 10 题。）
+说明：用 `Tap:` 把句子切成若干「词汇/短语块」（块之间的字不参与点击）；`Targets:` 标明哪些块是审题关键词。可含干扰块，点击次数少于逐词模式。未写 `Tap:` 时仍按逐词切块（旧格式）。
 
 Q1.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Do you agree or disagree with the following statement? The most effective way for a person to improve their health is through regular physical exercise.
 Targets: the most effective way | improve their health | regular | physical exercise
+Tap: Do you agree or disagree with the following statement? | The most effective way | for a person to | improve their health | is through | regular | physical exercise.
 
 Q2.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Some people prefer to spend their free time alone, while others prefer to spend it with friends or family. Which do you prefer and why?
 Targets: free time | alone | with friends or family | Which do you prefer
+Tap: Some people prefer to spend their | free time | alone, | while others prefer to spend it | with friends or family. | Which do you prefer | and why?
 
 Q3.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Do you think children who grow up in cities have more advantages than those who grow up in rural areas in terms of personal development?
 Targets: children who grow up in cities | more advantages than | in terms of personal development | rural areas
+Tap: Do you think | children who grow up in cities | have more advantages than | those who grow up in | rural areas | in terms of personal development?
 
 Q4.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Do you agree or disagree? Young people today spend too much time on social media, which negatively affects their ability to communicate in real life.
 Targets: too much time | negatively affects | ability to communicate in real life | Young people today
+Tap: Do you agree or disagree? | Young people today | spend | too much time | on social media, | which negatively affects | their ability to communicate in real life.
 
 Q5.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Some people believe that it is better to have a job that pays well even if you do not enjoy it, rather than to have a job you love but that pays less. Do you agree?
 Targets: pays well | even if you do not enjoy it | rather than | a job you love but that pays less
+Tap: Some people believe that it is better to have a job that | pays well | even if you do not enjoy it, | rather than to have a job you love but that pays less. | Do you agree?
 
 Q6.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Do you agree or disagree with the following statement? Universities should require all students to take courses in subjects outside their major field of study.
 Targets: should require | all students | outside their major field of study | Universities
+Tap: Do you agree or disagree with the following statement? | Universities | should require | all students | to take courses in subjects | outside their major field of study.
 
 Q7.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Do you prefer to learn new things on your own by exploring independently, or do you prefer to learn with the guidance of a teacher or mentor?
 Targets: learn new things | on your own by exploring independently | with the guidance of a teacher or mentor | do you prefer
+Tap: Do you prefer | to learn new things | on your own by exploring independently, | or | do you prefer | to learn | with the guidance of a teacher or mentor?
 
 Q8.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Do you agree or disagree? People who have lived in more than one country are better at understanding and working with people from different cultures.
 Targets: lived in more than one country | better at | understanding and working with | people from different cultures
+Tap: Do you agree or disagree? | People who have lived in more than one country | are better at | understanding and working with | people from different cultures.
 
 Q9.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Some people think that it is important for children to be involved in organized activities such as sports teams or music lessons outside of school. Others disagree. What is your opinion?
 Targets: organized activities | such as sports teams or music lessons | outside of school | children
+Tap: Some people think that it is important for | children | to be involved in | organized activities | such as sports teams or music lessons | outside of school. | Others disagree. | What is your opinion?
 
 Q10.
 Instruction: 点击句中所有限定本题的审题关键词（可多块）。
 Sentence: Do you agree or disagree? The best way to reduce stress is to spend time doing something creative, such as painting, writing, or playing a musical instrument.
 Targets: the best way | reduce stress | creative | such as painting, writing, or playing a musical instrument
+Tap: Do you agree or disagree? | The best way | to reduce stress | is to spend time doing something | creative, | such as painting, writing, or playing a musical instrument.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【附 · 审题 Part 2 Read Choice】网页「练习 → 审题 · Part 2」加载以下区块
