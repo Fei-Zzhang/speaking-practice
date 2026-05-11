@@ -140,12 +140,22 @@
     .material-game-opt.correct { border-color: var(--correct); background: rgba(34,197,94,0.12); }
     .material-game-opt.wrong { border-color: var(--wrong); background: rgba(239,68,68,0.08); }
     .rq-tap-line { font-size: 1.08rem; line-height: 1.75; margin: 0.75rem 0 0; color: var(--text); }
-    .rq-tap-target { display: inline; padding: 0.1em 0.2em; margin: 0 1px; border-radius: 6px; cursor: pointer; border: 1px dashed rgba(99,102,241,0.45); background: rgba(99,102,241,0.06); transition: background 0.15s ease, border-color 0.15s ease; }
-    .rq-tap-target:hover { border-color: var(--accent); background: rgba(99,102,241,0.12); }
+    /* 关键词与干扰词点击前外观一致，避免「只有正确答案有款」暴露答案 */
+    .rq-tap-target,
+    .rq-tap-word {
+      display: inline;
+      padding: 0.1em 0.2em;
+      margin: 0 1px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px dashed rgba(99,102,241,0.4);
+      background: rgba(99,102,241,0.06);
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .rq-tap-target:hover,
+    .rq-tap-word:hover { border-color: var(--accent); background: rgba(99,102,241,0.11); }
     .rq-tap-target.rq-tap-hit { border-style: solid; border-color: var(--correct); background: rgba(34,197,94,0.18); cursor: default; }
-    .rq-tap-word { display: inline; padding: 0.05em 0.12em; border-radius: 4px; cursor: pointer; transition: background 0.12s ease; }
-    .rq-tap-word:hover { background: rgba(0,0,0,0.06); }
-    .rq-tap-word.rq-tap-bad { animation: rqTapShake 0.35s ease; background: rgba(239,68,68,0.2); }
+    .rq-tap-word.rq-tap-bad { animation: rqTapShake 0.35s ease; border-color: var(--wrong); background: rgba(239,68,68,0.15); }
     @keyframes rqTapShake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
     .material-text-body { white-space: pre-wrap; font-size: 0.88rem; line-height: 1.55; max-height: min(65vh, 520px); overflow-y: auto; padding: 1rem; background: var(--bg); border-radius: 10px; border: 1px solid var(--border); text-align: left; }
     .material-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
@@ -4354,7 +4364,7 @@
                 '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
                 '<span style="flex:1"></span>' +
                 (!rdT
-                  ? '<span style="color:var(--muted);font-size:0.88rem">点击句中虚线框内全部关键词；点错普通词会提示。</span>'
+                  ? '<span style="color:var(--muted);font-size:0.88rem">句中每个虚线框均可点击；请标出全部审题关键词，点错会提示。</span>'
                   : '<span style="color:var(--correct);font-size:0.88rem;font-weight:600">本轮 Part 1 已完成</span>') +
                 (rdT
                   ? '<button type="button" class="primary" data-rq-tap-restart>重新开始</button>'
