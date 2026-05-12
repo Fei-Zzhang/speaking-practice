@@ -3982,14 +3982,14 @@
               '<p class="text-gray-600 leading-relaxed">' +
               '五项专项：<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">example-practice.text</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">reasoning_training_practice.text</code> · ' +
-              '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">question_reading_practice.text</code> · ' +
+              '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">question_reading</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">topic_vocab_training.text</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">brainstorrming_practice.text</code>（头脑风暴）。' +
               '</p></div>' +
               '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">' +
               hubCard('example', 'fa-lightbulb-o', '举例练习', 'Example practice') +
               hubCard('reasoning', 'fa-comments', '解释练习', 'Reasoning practice') +
-              hubCard('readquestions', 'fa-file-text-o', '审题练习', 'Part 1 审题圈词 · Part 2 四选一') +
+              hubCard('readquestions', 'fa-file-text-o', '审题练习', 'Part 1 question_reading · Part 2 四选一') +
               hubCard('topicvocab', 'fa-book', '话题词汇拓展', 'Topic vocab') +
               hubCard('brainstorm', 'fa-bolt', '头脑风暴', 'Brainstorming') +
               '</div>' +
@@ -4386,7 +4386,7 @@
                 '<div class="material-tabs">' +
                 '<button type="button" class="' +
                 (tabRQ === 'p1' ? 'tab-active' : '') +
-                '" data-rq-tab="p1">Part 1 · 审题圈词</button>' +
+                '" data-rq-tab="p1">Part 1 · question_reading</button>' +
                 '<button type="button" class="' +
                 (tabRQ === 'p2' ? 'tab-active' : '') +
                 '" data-rq-tab="p2">Part 2 · 四选一</button>' +
@@ -4413,7 +4413,7 @@
                 '<div class="card">' +
                 tabsRqHtml +
                 '<div class="material-game-head">' +
-                '<strong>审题练习 · Part 1 审题圈词</strong>' +
+                '<strong>审题练习 · Part 1 question_reading</strong>' +
                 '<span style="color:var(--muted);font-size:0.88rem">第 ' +
                 (ixT + 1) +
                 ' / ' +
@@ -4427,7 +4427,7 @@
                 '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
                 '<span style="flex:1"></span>' +
                 (!rdT
-                  ? '<span style="color:var(--muted);font-size:0.88rem">句中可点击部分为教材划分的词块（有 Tap: 时为短语片；无 Tap: 时为逐词小框）。请点出全部审题关键词，点错会提示。</span>'
+                  ? ''
                   : '<span style="color:var(--correct);font-size:0.88rem;font-weight:600">本轮 Part 1 已完成</span>') +
                 (rdT
                   ? '<button type="button" class="primary" data-rq-tap-restart>重新开始</button>'
@@ -5310,7 +5310,7 @@
               '<i class="fa fa-lightbulb-o text-primary mr-2" aria-hidden="true"></i>说明</h3>' +
               '<p class="text-gray-700 text-sm leading-relaxed">每题依次口述：开始录制后<strong>自动计时 ' +
                 BRAINSTORM_REC_DURATION_SEC +
-                ' 秒</strong>，到时自动停止并保存本题；也可提前点「停止录制」。重新录制会覆盖本题保存状态。随机最多 4 题全部录入后，点击「完成本轮 · 查看口述总结」浏览整理稿；在总结页点「完成并返回话题列表」即今日打卡（不上传教师端）。</p></div>' +
+                ' 秒</strong>，到时自动停止并保存本题；也可提前点「停止录制」。重新录制会覆盖本题保存状态。随机最多 4 题全部录入后，点击「完成本轮 · 查看口述总结」浏览整理稿；在总结页点「完成并返回话题列表」即今日打卡（question_reading）。</p></div>' +
               '<footer class="mt-10 pt-6 border-t border-gray-100 text-center text-gray-500 text-sm"><p>© 2026 fei\'s studio | 让学习更有动力</p></footer>' +
               '</div>' +
               wheelModal;
