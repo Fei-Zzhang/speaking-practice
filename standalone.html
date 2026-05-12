@@ -3982,14 +3982,14 @@
               '<p class="text-gray-600 leading-relaxed">' +
               '五项专项：<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">example-practice.text</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">reasoning_training_practice.text</code> · ' +
-              '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">question_reading</code> · ' +
+              '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">question reading practice</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">topic_vocab_training.text</code> · ' +
               '<code class="text-sm bg-white px-1.5 py-0.5 rounded border border-gray-100">brainstorrming_practice.text</code>（头脑风暴）。' +
               '</p></div>' +
               '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">' +
               hubCard('example', 'fa-lightbulb-o', '举例练习', 'Example practice') +
               hubCard('reasoning', 'fa-comments', '解释练习', 'Reasoning practice') +
-              hubCard('readquestions', 'fa-file-text-o', '审题练习', 'Part 1 question_reading · Part 2 四选一') +
+              hubCard('readquestions', 'fa-file-text-o', 'question reading practice', 'Part 1 · Part 2 四选一') +
               hubCard('topicvocab', 'fa-book', '话题词汇拓展', 'Topic vocab') +
               hubCard('brainstorm', 'fa-bolt', '头脑风暴', 'Brainstorming') +
               '</div>' +
@@ -4312,7 +4312,7 @@
                   var qsMcq = parseQuestionReadingReadChoice(rawRq).map(shuffleMcqQuestion);
                   if (!qsTap.length && !qsMcq.length) {
                     state.studentReadChoiceError =
-                      '未能解析审题练习。请确认 question_reading_practice.text 中含「Part 1 Keyword Tap」（Sentence / Targets，| 分隔；单行「Tap:」可选，用于按短语块切段），以及可选的「Part 2 Read Choice」四选一。';
+                      '未能解析 question reading practice 材料。请确认 question_reading_practice.text 中含「Part 1 Keyword Tap」（Sentence / Targets，| 分隔；单行「Tap:」可选，用于按短语块切段），以及可选的「Part 2 Read Choice」四选一。';
                   } else {
                     state.studentReadChoicePart1 = qsTap.length ? qsTap : null;
                     state.studentReadChoicePart2 = qsMcq.length ? qsMcq : null;
@@ -4343,7 +4343,7 @@
             if (state.studentReadChoiceError) {
               root.innerHTML =
                 studentTopNavHtml() +
-                '<div class="card"><h2 style="margin:0 0 0.75rem">审题练习 · Read Choice</h2>' +
+                '<div class="card"><h2 style="margin:0 0 0.75rem">question reading practice · Read Choice</h2>' +
                 '<p style="color:var(--wrong)">' +
                 escapeHtml(state.studentReadChoiceError) +
                 '</p>' +
@@ -4386,7 +4386,7 @@
                 '<div class="material-tabs">' +
                 '<button type="button" class="' +
                 (tabRQ === 'p1' ? 'tab-active' : '') +
-                '" data-rq-tab="p1">Part 1 · question_reading</button>' +
+                '" data-rq-tab="p1">Part 1 · question reading practice</button>' +
                 '<button type="button" class="' +
                 (tabRQ === 'p2' ? 'tab-active' : '') +
                 '" data-rq-tab="p2">Part 2 · 四选一</button>' +
@@ -4403,17 +4403,13 @@
               var gotT = state.studentReadChoiceTapGot;
               var rdT = state.studentReadChoiceTapRoundDone;
               var tapLine = questionReadingRenderTapHtml(qT, gotT);
-              var instT = qT.instruction
-                ? '<p class="material-game-stem" style="margin-bottom:0.35rem">' +
-                  escapeHtml(qT.instruction) +
-                  '</p>'
-                : '';
+              var instT = '';
               root.innerHTML =
                 studentTopNavHtml() +
                 '<div class="card">' +
                 tabsRqHtml +
                 '<div class="material-game-head">' +
-                '<strong>审题练习 · Part 1 question_reading</strong>' +
+                '<strong>question reading practice · Part 1</strong>' +
                 '<span style="color:var(--muted);font-size:0.88rem">第 ' +
                 (ixT + 1) +
                 ' / ' +
@@ -4529,7 +4525,7 @@
                 '<div class="card">' +
                 tabsRqHtml +
                 '<div class="material-game-head">' +
-                '<strong>审题练习 · Part 2 四选一</strong>' +
+                '<strong>question reading practice · Part 2 四选一</strong>' +
                 '<span style="color:var(--muted);font-size:0.88rem">第 ' +
                 (ixQ + 1) +
                 ' / ' +
@@ -4543,9 +4539,6 @@
                 '<div class="actions" style="margin-top:1rem">' +
                 '<button type="button" data-practice-hub-back-rq>← 练习首页</button>' +
                 '<span style="flex:1"></span>' +
-                (!revQ
-                  ? '<span style="color:var(--muted);font-size:0.88rem">点击选项查看解析</span>'
-                  : '') +
                 (revQ && !doneQ
                   ? '<button type="button" class="primary" data-rq-next>下一题</button>'
                   : '') +
@@ -4600,7 +4593,7 @@
 
             root.innerHTML =
               studentTopNavHtml() +
-              '<div class="card"><p>审题练习暂无可用题目。</p><button type="button" data-practice-hub-back-rq>← 练习首页</button></div>';
+              '<div class="card"><p>question reading practice 暂无可用题目。</p><button type="button" data-practice-hub-back-rq>← 练习首页</button></div>';
             bindStudentTopNav(root);
             root.querySelector('[data-practice-hub-back-rq]').onclick = function () {
               persistPracticeSection('hub');
