@@ -1762,34 +1762,15 @@
           bindRefClickHandlers(document.getElementById('oral-ref-html'));
 
           document.getElementById('oral-transcript-block').style.display = 'block';
-          var asrLine = data.asrTranscript && String(data.asrTranscript).trim();
           var soeWordsLine = parsed.transcript && parsed.transcript.trim() ? parsed.transcript.trim() : '';
           var hintEl = document.getElementById('oral-transcript-hint');
           var labelEl = document.getElementById('oral-transcript-label');
-          if (asrLine) {
-            document.getElementById('oral-transcript-text').textContent = asrLine;
-            if (labelEl) labelEl.textContent = '你的答案';
-            if (hintEl) {
-              hintEl.style.display = 'none';
-              hintEl.textContent = '';
-            }
-          } else {
-            document.getElementById('oral-transcript-text').textContent =
-              soeWordsLine || '（无）';
-            if (labelEl) labelEl.textContent = '你的答案';
-            if (hintEl) {
-              hintEl.style.display = 'block';
-              var asrErr = data.asrError && String(data.asrError).trim();
-              if (asrErr) {
-                hintEl.innerHTML =
-                  '<strong>ASR 未返回真实口述：</strong>' +
-                  escapeHtml(asrErr) +
-                  '<br/><span style="color:#94a3b8">下方黑字为智聆按参考句对齐的词（非真实口述）。</span>';
-              } else {
-                hintEl.textContent =
-                  '说明：智聆 SOE 按参考句逐词打分，返回的 Words 拼起来会像整句原文。若要显示你实际说的内容，请在 oral-python-backend/.env 中配置 TENCENT_ASR_SECRET_ID 与 TENCENT_ASR_SECRET_KEY，并重启 Python 服务。';
-              }
-            }
+          document.getElementById('oral-transcript-text').textContent = soeWordsLine || '（无）';
+          if (labelEl) labelEl.textContent = '你的答案（智聆按参考句对齐）';
+          if (hintEl) {
+            hintEl.style.display = 'block';
+            hintEl.textContent =
+              'Listen & Repeat 仅使用智聆口语评测（发音分 + 逐词对齐）。真实口述转写请使用头脑风暴、Interview 等模块（腾讯云录音文件 ASR）。';
           }
 
           var weakEl = document.getElementById('oral-weak-words');

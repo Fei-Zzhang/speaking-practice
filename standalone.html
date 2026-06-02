@@ -565,9 +565,10 @@
       /**
        * 三条业务线（勿串路）— 与 oral-python-backend 一致
        *
-       * A · LNR（Listen&Repeat）：子页 Listen&Repeat练习/index.html 仅 POST /api/oral-eval（智聆 + 腾讯云一句 ASR 辅助转写），不用 TokenHub。
-       * B · Interview 题库（本页「题目练习」）：录音结束优先 POST /api/interview-correct（Web Speech/流式已有文本 + TokenHub）；无文本才 POST /api/upload-audio-correct。不要调用 /api/asr-eval。
-       * C ·「上传录音批改」：仅 POST /api/upload-audio-correct（录音文件识别 CreateRecTask + TokenHub）。
+       * A · LNR（Listen&Repeat）：子页仅 POST /api/oral-eval（智聆 SOE 发音评测），不用 ASR 转写。
+       * B · Interview 题库：录音结束优先 POST /api/interview-correct（流式/已有文本 + TokenHub）；无文本则 POST /api/upload-audio-correct（录音文件 ASR + TokenHub）。
+       * C ·「上传录音批改」：POST /api/upload-audio-correct（CreateRecTask + TokenHub）。
+       * 头脑风暴等纯转写：POST /api/asr-transcript（CreateRecTask，与 B/C 同套 TENCENT_SECRET_* 密钥）。
        * 学生经 Node 提交作业（submit-audio）：作业项 <code>mode===listenRepeat</code> 走 <code>oral-eval</code>（与 A 一致）；否则（topic/type 等 Interview 题）走 <code>upload-audio-correct</code>（与 C 一致）；仅后者需开通 Interview 云端批改。
        */
 
@@ -1733,6 +1734,8 @@
       /** 转盘维度顺序（与抽选结果 key 一致）：Money → Time → Relationship → Health */
       /** 头脑风暴单题口述最长秒数，到时自动停止并保存 */
       var BRAINSTORM_REC_DURATION_SEC = 45;
+      /** stop() 之后 Web Speech 仍可能延迟几百毫秒才吐出 final；过短会导致误判「未识别」 */
+      var BRAINSTORM_REC_FINALIZE_DELAY_MS = 1200;
       var BRAINSTORM_WHEEL_DIMS = [
         { key: 'money', label: 'Money' },
         { key: 'timeAndSpace', label: 'Time and Space' },
@@ -5400,7 +5403,7 @@
                   setTimeout(function () {
                     brainstormFinalizeCurrentSlotLocal();
                     render();
-                  }, 400);
+                  }, BRAINSTORM_REC_FINALIZE_DELAY_MS);
                   render();
                   return;
                 }
@@ -5442,18 +5445,18 @@
                 state.studentBrainstormTranscript = '';
                 var rec = new SR();
                 rec.continuous = true;
-                rec.interimResults = false;
+                rec.interimResults = true;
                 rec.lang = 'en-US';
+                rec.maxAlternatives = 1;
                 rec.onresult = function (ev) {
-                  var t = '';
+                  var chunk = '';
                   var ri;
-                  for (ri = ev.resultIndex; ri < ev.results.length; ri++) {
-                    if (ev.results[ri].isFinal) {
-                      t += ev.results[ri][0].transcript + ' ';
-                    }
+                  for (ri = 0; ri < ev.results.length; ri++) {
+                    chunk += ev.results[ri][0].transcript || '';
                   }
-                  state.studentBrainstormTranscript =
-                    (state.studentBrainstormTranscript + ' ' + t).replace(/\s+/g, ' ').trim();
+                  state.studentBrainstormTranscript = String(chunk || '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
                 };
                 rec.onerror = function () {
                   stopStudentBrainstormRecognition();
@@ -5487,7 +5490,7 @@
                       setTimeout(function () {
                         brainstormFinalizeCurrentSlotLocal();
                         render();
-                      }, 400);
+                      }, BRAINSTORM_REC_FINALIZE_DELAY_MS);
                       render();
                       return;
                     }

@@ -36,35 +36,45 @@ TENCENT_SECRET_ID=你的SecretId
 TENCENT_SECRET_KEY=你的SecretKey
 PORT=5001
 
-# 可选：Listen & Repeat「真实口述」转写（腾讯云一句话识别 ASR）
-# 与智聆 SOE 不同：SOE 是照着参考句打发音分，Words 往往是整句对齐，不是真实说了什么。
-# 配置后 /api/oral-eval 会多返回 asrTranscript 字段。
-TENCENT_ASR_SECRET_ID=
-TENCENT_ASR_SECRET_KEY=
+# 可选：录音文件识别地域（默认 ap-guangzhou）
 TENCENT_ASR_REGION=ap-guangzhou
+# 可选：CreateRecTask 引擎，默认 16k_en
+ASR_ENGINE_MODEL=16k_en
 ```
 
 需要安装腾讯云 SDK（若未装）：`pip install tencentcloud-sdk-python`
 
-- **AppID**：在腾讯云「口语评测（新版）」控制台开通服务后，在「API 密钥管理」页面获取（与 SecretId/SecretKey 同页）。
-- 智聆 **TENCENT** 三个必填，否则 `/api/oral-eval` 会返回“未配置”错误。
-- **ASR 密钥**（可选）：与「语音识别」控制台 ASR 的 SecretId/SecretKey 一致；不配则仅智聆打分，转写仍可能显示为参考句对齐。
+- **主账号 API 密钥一套即可**：`TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY` 同时用于 **智聆 SOE**（需配 `TENCENT_APP_ID`）和 **录音文件 ASR**（CreateRecTask）。
+- **Listen & Repeat**：仅 **`POST /api/oral-eval` → 智聆 SOE**（发音分 + 逐词对齐），**不再**接一句话识别或其它 ASR。
+- **其余转写**（头脑风暴、上传批改、`/api/asr-transcript` 等）：**录音文件识别 CreateRecTask**，同样用 **`TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY`**。
+
+### 智聆 vs 语音识别（不是同一个产品）
+
+| 能力 | 产品 | 用途 | 本项目中 |
+|------|------|------|----------|
+| 智聆 SOE | 口语评测（新版） | 对照参考句打发音分、逐词得分 | **仅 LNR** `/api/oral-eval` |
+| 录音文件 ASR | 语音识别 CreateRecTask | 把整段录音转成文字 | 头脑风暴、Interview 上传、批改等 |
+| 一句话识别 | SentenceRecognition | 短音频快速转写 | **本项目已不用** |
 
 ### Interview：腾讯云「实时语音识别」流式（由 Node 签发 URL）
 
-- **不在本 Python 服务内实现**。`standalone.html` Interview「题目练习」中的 **腾讯云实时转写（流式）** 由浏览器直连 `wss://asr.cloud.tencent.com`，鉴权 URL 由 **`server/` Node** 的 **`GET /api/tencent-asr/sign`** 生成（签名算法见[实时语音识别 WebSocket](https://cloud.tencent.com/document/product/1093/48982)）。
-- 请在 **`server/.env`** 配置 **`TENCENT_ASR_APP_ID`**、**`TENCENT_ASR_SECRET_ID`**、**`TENCENT_ASR_SECRET_KEY`**，可与上表 **TENCENT_ASR_SECRET_*** 复用；引擎默认 **`16k_en`**（与题目练习英文场景一致）。
-- **Listen & Repeat** 仍走本目录的 **`/api/oral-eval`**（智聆 + 可选一句话 ASR），**无需**配置 Node 侧流式签名。
+- **不在本 Python 服务内实现**。`standalone.html` Interview「题目练习」中的 **腾讯云实时转写（流式）** 由浏览器直连 `wss://asr.cloud.tencent.com`，鉴权 URL 由 **`server/` Node** 的 **`GET /api/tencent-asr/sign`** 生成。
+- 请在 **`server/.env`** 配置 **`TENCENT_ASR_APP_ID`**（可与主账号 AppID 相同）、**`TENCENT_ASR_SECRET_ID`**、**`TENCENT_ASR_SECRET_KEY`**（可与上面 **`TENCENT_SECRET_*`** 填同一对密钥）。
+- **Listen & Repeat** 只走 Python **`/api/oral-eval`（智聆）**，不依赖 Node 流式 ASR。
+
+### `POST /api/asr-transcript`（纯转写、无批改）
+
+- **录音文件识别 CreateRecTask**；需 **`TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY`**。无需 TokenHub。
 
 ### `POST /api/upload-audio-correct`（standalone 上传录音）
 
-- 使用腾讯云 **录音文件识别 CreateRecTask**（与 `homework-miniapp-server` 同源逻辑），**不是**一句话识别，适合 **45s 级**长音频（单文件约 **5MB** 内）。
-- 需 **`TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY`**（控制台 API 密钥）；可选 **`ASR_ENGINE_MODEL`**（默认 `16k_en`）。转写后再调 **TokenHub** 批改（`LKE_API_KEY` 等）。
+- **录音文件识别 CreateRecTask**（约 **5MB** 内）；需 **`TENCENT_SECRET_ID` / `TENCENT_SECRET_KEY`**；可选 **`ASR_ENGINE_MODEL`**。转写后 **TokenHub** 批改（`LKE_API_KEY` 等）。
 
 ### 与本目录 `POST /api/asr-eval` 的区别
 
-- **`/api/asr-eval`**：仍为一小句式 **一句话识别** + 本地 Ollama（若开启），与上传批改接口不同。
-- **实时流式**：边说边出字，需 Node 签名 + 浏览器按文档推送 **PCM** 二进制帧；计费与权限以腾讯云控制台为准。
+- **`/api/asr-eval`**：**CreateRecTask** 转写 + 本地 Ollama（若开启）语法包；密钥同上。
+- **`/api/oral-eval`（LNR）**：**仅智聆 SOE**，不返回 ASR 转写字段。
+- **实时流式**：Node 签名 + 浏览器 PCM；与 LNR 无关。
 
 ## 第三步：启动服务
 

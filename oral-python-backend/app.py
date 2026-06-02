@@ -51,8 +51,6 @@ TENCENT_SECRET_KEY = os.environ.get("TENCENT_SECRET_KEY", "")
 SOE_HOST = "soe.cloud.tencent.com"
 SOE_PATH_PREFIX = "/soe/api/"
 LT_API_URL = os.environ.get("LT_API_URL", "http://localhost:8010/v2/check")
-TENCENT_ASR_SECRET_ID = os.environ.get("TENCENT_ASR_SECRET_ID", "")
-TENCENT_ASR_SECRET_KEY = os.environ.get("TENCENT_ASR_SECRET_KEY", "")
 TENCENT_ASR_REGION = os.environ.get("TENCENT_ASR_REGION", "ap-guangzhou")
 # 录音文件识别 CreateRecTask（长音频/上传文件），与 homework-miniapp-server 一致；非「一句话识别」
 ASR_ENGINE_MODEL = os.environ.get("ASR_ENGINE_MODEL", "16k_en")
@@ -100,8 +98,6 @@ def api_health():
     return jsonify(
         ok=True,
         service="oral-python-backend",
-        asr_secret_id_configured=bool(TENCENT_ASR_SECRET_ID and TENCENT_ASR_SECRET_ID.strip()),
-        asr_secret_key_configured=bool(TENCENT_ASR_SECRET_KEY and TENCENT_ASR_SECRET_KEY.strip()),
         tencentcloud_sdk_installed=sdk_ok,
         lke_key_configured=bool(LKE_API_KEY and LKE_API_KEY.strip()),
         lke_base_url=LKE_BASE_URL,
@@ -116,7 +112,7 @@ def api_health():
         ffmpeg_path=shutil.which("ffmpeg") or "",
         ffprobe_path=shutil.which("ffprobe") or "",
         pydub_import_ok=pydub_ok,
-        hint="若 asr_* 为 false：检查 oral-python-backend/.env 变量名与路径；若 sdk 为 false：pip install tencentcloud-sdk-python；oral-eval 转码需 ffmpeg+ffprobe（Dockerfile 已含）",
+        hint="LNR 需 soe_configured（TENCENT_APP_ID + SECRET_*）；转写/批改需 tencent_credential_for_file_asr（同一对 SECRET_*）。Interview 流式 ASR 在 server/.env 的 TENCENT_ASR_*。",
     )
 
 
@@ -854,54 +850,6 @@ def _call_soe_websocket(audio_bytes, ref_text, eval_mode="1", server_engine_type
     return (overall, pron_detail), None
 
 
-def _tencent_sentence_asr_transcript(audio_bytes: bytes, voice_format: int):
-    """
-    腾讯云「一句话识别」：把用户实际说出的内容转成文本。
-    返回 (transcript, error_message)。error_message 仅失败时非空，便于前端/排查。
-    voice_format: SOE 约定 0=pcm 1=wav 2=mp3
-    """
-    if not TENCENT_ASR_SECRET_ID or not TENCENT_ASR_SECRET_KEY:
-        return None, "未配置 ASR 密钥（进程内未读到 TENCENT_ASR_SECRET_ID/KEY，请确认 oral-python-backend/.env 存在且已重启 Python）"
-    if not audio_bytes or len(audio_bytes) < 100:
-        return None, "音频过短，无法送 ASR"
-    voice_ext = "wav" if voice_format == 1 else "mp3"
-    if voice_format == 0:
-        voice_ext = "wav"
-    try:
-        import base64
-        from tencentcloud.common import credential
-        from tencentcloud.common.profile.client_profile import ClientProfile
-        from tencentcloud.common.profile.http_profile import HttpProfile
-        from tencentcloud.asr.v20190614 import asr_client, models
-
-        cred = credential.Credential(TENCENT_ASR_SECRET_ID, TENCENT_ASR_SECRET_KEY)
-        httpProfile = HttpProfile()
-        httpProfile.endpoint = "asr.tencentcloudapi.com"
-        clientProfile = ClientProfile()
-        clientProfile.httpProfile = httpProfile
-        client = asr_client.AsrClient(cred, TENCENT_ASR_REGION, clientProfile)
-
-        req = models.SentenceRecognitionRequest()
-        params = {
-            "EngSerViceType": "16k_en",
-            "SourceType": 1,
-            "VoiceFormat": voice_ext,
-            "UsrAudioKey": str(uuid.uuid4()),
-            "Data": base64.b64encode(audio_bytes).decode("utf-8"),
-        }
-        req.from_json_string(json.dumps(params))
-        resp = client.SentenceRecognition(req)
-        resp_data = json.loads(resp.to_json_string())
-        transcript = (resp_data.get("Result") or "").strip()
-        if not transcript:
-            return None, "腾讯云 ASR 返回空文本（请检查录音是否过短、或控制台是否开通一句话识别）"
-        return transcript, None
-    except ImportError as e:
-        return None, "缺少依赖：pip install tencentcloud-sdk-python（" + str(e) + "）"
-    except Exception as e:
-        return None, "ASR 调用失败：" + str(e)[:400]
-
-
 def _extract_transcript_from_rec_result(asr_result_json: str) -> str:
     """从录音文件识别 DescribeTaskStatus 返回的 Result JSON 中抽取合并文本。"""
     if not asr_result_json or not asr_result_json.strip():
@@ -1234,15 +1182,11 @@ def oral_eval():
     if err:
         return jsonify(ok=False, error=err), 500
     overall, pron_detail = result if result else (None, None)
-    # 真实口述转写（与 SOE 发音分独立）
-    asr_transcript, asr_err = _tencent_sentence_asr_transcript(audio_bytes, voice_format)
     return jsonify(
         ok=True,
         overall=overall,
         pronDetail=pron_detail,
         raw=pron_detail,
-        asrTranscript=asr_transcript,
-        asrError=asr_err,
     )
 
 
@@ -1279,23 +1223,48 @@ def llm_grammar():
     return jsonify(ok=True, items=items)
 
 
-def _asr_plain_no_punct(text: str) -> str:
-    """批改展示用：ASR 原文去掉标点符号，多空格合并为单空格。"""
-    if not text or not str(text).strip():
-        return ""
-    import unicodedata
+@app.route("/api/asr-transcript", methods=["POST", "OPTIONS"])
+def asr_transcript_only():
+    """
+    仅转写：浏览器上传音频 → 腾讯云「录音文件识别」CreateRecTask（与 upload-audio-correct 同源）。
+    LNR 的 oral-eval 只走智聆 SOE，不在此接口。需 TENCENT_SECRET_ID / TENCENT_SECRET_KEY。
+    """
+    if request.method == "OPTIONS":
+        return "", 204
+    if "audio" not in request.files:
+        return jsonify(ok=False, error="缺少音频文件 audio"), 400
+    audio = request.files["audio"]
+    if not audio or not audio.filename:
+        return jsonify(ok=False, error="缺少音频文件 audio"), 400
+    if not TENCENT_SECRET_ID or not TENCENT_SECRET_KEY:
+        return jsonify(
+            ok=False,
+            error="未配置 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（录音文件识别 CreateRecTask 需要，与智聆所用密钥一致）",
+        ), 500
 
-    out = []
-    for ch in str(text):
-        if unicodedata.category(ch).startswith("P"):
-            continue
-        out.append(ch)
-    return " ".join("".join(out).split())
+    audio_bytes = audio.read()
+    if len(audio_bytes) < 100:
+        return jsonify(ok=False, error="音频数据过短或为空。"), 400
+
+    filename = (audio.filename or "upload.bin").lower()
+    wav_b, conv_err = _normalize_audio_bytes_for_tencent_rec_file(audio_bytes, filename)
+    if conv_err or not wav_b:
+        return jsonify(
+            ok=False,
+            error="音频转码失败：" + (conv_err or "未知错误")[:500],
+        ), 400
+    try:
+        transcript = (_asr_file_recognize_long_audio(wav_b) or "").strip()
+    except Exception as e:
+        return jsonify(ok=False, error="ASR：" + str(e)[:800]), 502
+    if not transcript:
+        return jsonify(ok=False, error="ASR 未识别到有效文本，请检查录音或格式。"), 400
+    return jsonify(ok=True, transcript=transcript)
 
 
 @app.route("/api/asr-eval", methods=["POST", "OPTIONS"])
 def asr_eval():
-    """使用腾讯云通用 ASR + 本地 Ollama 做 45 秒自由说转写和语法检查。"""
+    """使用腾讯云录音文件识别（CreateRecTask）转写 + 本地 Ollama 做语法检查；非一句话识别。"""
     if request.method == "OPTIONS":
         return "", 204
     if "audio" not in request.files:
@@ -1304,58 +1273,28 @@ def asr_eval():
     if audio.filename == "":
         return jsonify(ok=False, error="缺少音频文件 audio"), 400
 
-    if not TENCENT_ASR_SECRET_ID or not TENCENT_ASR_SECRET_KEY:
-        return jsonify(ok=False, error="未配置通用 ASR 的 TENCENT_ASR_SECRET_ID / TENCENT_ASR_SECRET_KEY"), 500
+    if not TENCENT_SECRET_ID or not TENCENT_SECRET_KEY:
+        return jsonify(
+            ok=False,
+            error="未配置 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（录音文件识别 CreateRecTask 需要，与智聆所用密钥一致）",
+        ), 500
 
     audio_bytes = audio.read()
     if len(audio_bytes) < 100:
         return jsonify(ok=False, error="音频数据过短或为空，请重新上传。"), 400
 
-    # 若是 webm/m4a 等格式，先用 ffmpeg（及 pydub 可选）转成 16k 单声道 wav
-    filename = (audio.filename or "").lower()
-    voice_ext = "wav"
-    pcm_bytes = audio_bytes
-    if any(ext in filename for ext in (".webm", ".weba", ".m4a")) or "webm" in (
-        request.content_type or ""
-    ):
-        pcm_bytes, conv_err = _browser_audio_bytes_to_wav_16k_mono(audio_bytes)
-        if conv_err or not pcm_bytes:
-            return jsonify(ok=False, error="音频转 wav 失败：" + (conv_err or "")), 400
-        voice_ext = "wav"
-    else:
-        # mp3/wav 等 ASR 支持的格式可以直接上传；此处统一用 wav 作为 VoiceFormat 提示
-        voice_ext = "wav" if filename.endswith(".wav") else "mp3"
+    filename = (audio.filename or "upload.bin").lower()
+    wav_b, conv_err = _normalize_audio_bytes_for_tencent_rec_file(audio_bytes, filename)
+    if conv_err or not wav_b:
+        return jsonify(
+            ok=False,
+            error="音频转码失败：" + (conv_err or "未知错误")[:500],
+        ), 400
 
-    # 调用腾讯云一句话识别 SentenceRecognition
     try:
-        import base64
-        from tencentcloud.common import credential
-        from tencentcloud.common.profile.client_profile import ClientProfile
-        from tencentcloud.common.profile.http_profile import HttpProfile
-        from tencentcloud.asr.v20190614 import asr_client, models
-
-        cred = credential.Credential(TENCENT_ASR_SECRET_ID, TENCENT_ASR_SECRET_KEY)
-        httpProfile = HttpProfile()
-        httpProfile.endpoint = "asr.tencentcloudapi.com"
-        clientProfile = ClientProfile()
-        clientProfile.httpProfile = httpProfile
-        client = asr_client.AsrClient(cred, TENCENT_ASR_REGION, clientProfile)
-
-        req = models.SentenceRecognitionRequest()
-        # 16k 英文自由说场景，使用 16k_en 引擎
-        params = {
-            "EngSerViceType": "16k_en",
-            "SourceType": 1,
-            "VoiceFormat": voice_ext,
-            "UsrAudioKey": str(uuid.uuid4()),
-            "Data": base64.b64encode(pcm_bytes).decode("utf-8"),
-        }
-        req.from_json_string(json.dumps(params))
-        resp = client.SentenceRecognition(req)
-        resp_data = json.loads(resp.to_json_string())
-        transcript = (resp_data.get("Result") or "").strip()
+        transcript = (_asr_file_recognize_long_audio(wav_b) or "").strip()
     except Exception as e:
-        return jsonify(ok=False, error=f"调用通用 ASR 失败：{e}"), 500
+        return jsonify(ok=False, error="ASR：" + str(e)[:800]), 502
 
     if not transcript:
         return jsonify(ok=False, error="ASR 未识别到有效文本，请检查录音质量。"), 400
